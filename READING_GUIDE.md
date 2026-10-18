@@ -5,7 +5,7 @@ This project formalizes, in Lean 4 with Mathlib, the paper by Lorenzen, Leijen a
 `fip-tr-v2.latex`. The Lean sources in `RequestProject/` are grouped into one directory per
 section or appendix of the paper:
 
-```
+```text
 RequestProject/
 ├── Frontend/              Koka surface syntax and the [KOKA| … ] / [KOKA_FIP| … ] notation
 ├── Sec1_Overview/         §1   introductory examples (reverse, splay-tree zipper, smap)
@@ -45,7 +45,7 @@ inside `[KOKA| … ]` blocks) mark where the code for that part of the paper sta
 Read these files in this order. Each one imports the previous one.
 
 | File | Paper | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `Syntax.lean` | Fig. 2, Fig. 6 | `Var` (program names and store locations), `Val`, `Expr`, `Branch`, function annotations `Annot` (`fip`, `fbip`, with optional allocation budgets from §2.5), `FunDef`, signatures `Sig` |
 | `Semantics.lean` | Fig. 3 (§2.1) | substitution, evaluation contexts `ECtx`, head reduction `Head`, `Step`/`Steps` (`e ⟼* e'`), and an executable interpreter `Expr.run` proved sound |
 | `Rules.lean` | Fig. 4, 6, 7 (§2.2–2.5) | the judgment `Wf cfg U Δ Γ e`, i.e. `Δ \| Γ ⊢ e`: borrowed environment `Δ`, owned multiset `Γ` of variables and reuse credits `⋄k`; `FunDef.Wf`, `Sig.Wf` (`⊩ Σ`) |
@@ -62,7 +62,7 @@ binders the scope becomes `n + k`; the index `j < k` is the `j`-th new binder an
 outer variable `i`. A function body is a `Term (|x̄| + |ȳ|)`: it can only mention its parameters.
 
 | File | Contents |
-|---|---|
+| --- | --- |
 | `DeBruijn/Syntax.lean` | `TVal n`, `Term n`, `TBranches n`, `TFunDef`, `TSig`; substitution `Term.subst` (with `Subst.up`, `Subst.inst`, `Subst.args`); name resolution `Expr.toTerm : Scope n → Expr → Option (Term n)`, `Expr.toClosed`, `FunDef.toTFunDef`, `Sig.toTSig` |
 | `DeBruijn/Semantics.lean` | Fig. 3 on `Term n`: `TECtx`, `THead`, `TStep`, `TSteps`. A step maps `Term n` to `Term n`, so closed terms stay closed by construction |
 | `DeBruijn/Closed.lean` | `Expr.toTerm_isSome_iff` (resolution succeeds iff every free name is in scope), `Expr.toClosed_isSome_iff` (**a named expression is a `Term 0` iff it has no free name**), `FunDef.toTFunDef_isSome_iff` |
@@ -71,7 +71,7 @@ outer variable `i`. A function body is a `Term (|x̄| + |ȳ|)`: it can only ment
 | `DeBruijn/Print.lean` | `Term.toExpr` prints a term with names; `Term.toExpr_toTerm` / `Term.toExpr_toClosed`: resolving the printed term gives the term back (so `Expr.toTerm` is onto) |
 | `DeBruijn/Wf.lean` | well-formed programs are well scoped: `Wf.fv_inEnv`, `Wf.toClosed_isSome`, `FunDef.Wf.toTFunDef_isSome` |
 | `DeBruijn/Examples.lean` | every Koka module of the paper is well scoped (`…_scoped`); `reverse_db` runs `reverse` of §1 in the de Bruijn semantics |
-| `AppE_HeapSoundness/LamDeBruijn.lean` | `λfip` with de Bruijn indices: `LTVal n`, `LTVals n k`, `LTerm n`; a lambda `λ^z̄ x̄. e` is `LTVal.lam zs sc body` with `body : LTerm (k + |x̄|)` for `k = |z̄|` captured values, so closures are closure-converted by construction; the plain substitution `LTerm.subst`, the closure-instantiating substitution `LTerm.isubst` used by the semantics (it reaches a lambda body through the captured values that become closed values, as the named substitution of Fig. 9 does), the functional semantics `LTStep`, and name resolution `LExpr.toLTerm` |
+| `AppE_HeapSoundness/LamDeBruijn.lean` | `λfip` with de Bruijn indices: `LTVal n`, `LTVals n k`, `LTerm n`; a lambda `λ^z̄ x̄. e` is `LTVal.lam zs sc body` with `body : LTerm (k + \| x̄ \| )` for `k = \| z̄ \|` captured values, so closures are closure-converted by construction; the plain substitution `LTerm.subst`, the closure-instantiating substitution`LTerm.isubst` used by the semantics (it reaches a lambda body through the captured values that become closed values, as the named substitution of Fig. 9 does), the functional semantics `LTStep`, and name resolution`LExpr.toLTerm` |
 | `AppE_HeapSoundness/LamDeBruijnClosed.lean` | `LExpr.toLTerm_isSome_iff`, `LExpr.toLTerm_empty_isSome_iff` (**`LTerm 0` = closed expressions with correctly annotated lambdas**), `lam_wrong_annotation` |
 | `AppE_HeapSoundness/LamDeBruijnWf.lean` | `LWf.scoped`, `LWf.toLTerm_closed` (every well-formed closed `λfip` program is an `LTerm 0`), `LSig.Wf.toLTSig` |
 | `AppE_HeapSoundness/LamDeBruijnSubst.lean`, `LamDeBruijnBeta.lean`, `LamDeBruijnSimLemmas.lean` | proof files; the key lemma is `LExpr.toLTerm_subst`: substituting closed values commutes with name resolution, with `LTerm.isubst` on the de Bruijn side |
@@ -112,7 +112,7 @@ theorem `…_wf` (the functions are fully in-place) and a few evaluation checks 
 Start with the definitions and statements:
 
 | File | Paper | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `Store.lean` | Fig. 5, 6; B.1–B.2 | stores `S`, `Sound`, `Linear`, `roots`, the store semantics `SStep`/`SSteps` (`S \| e ⟼*ₛ S' \| e'`); **Theorem 2** `SSteps.size_eq` and **Theorem 3** `SSteps.size_le` |
 | `StoreSound.lean` | B.6 | `Sig.PaperFragment` (the setting of Theorem 1); the paper's original wording of Theorem 1, kept commented out |
 | `StoreSoundCex.lean` | — | `not_storeSoundOriginalClaim`: the original wording is false when a store may bind a program name |
@@ -150,7 +150,7 @@ The proof is spread over these files, listed in import order:
 Start with the definitions and statements:
 
 | File | Paper | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `Heap.lean` | Fig. 9, 10; E.1 | `λfip` syntax (`LVal`, `LExpr`), its typing `LWf`, heaps with reference counts, the heap semantics `HSteps`, the translation of destructive match (`LWf.dmatch_translation`). It keeps the paper's original wording of Theorem 6, commented out |
 | `HeapCex.lean` | — | `not_heapSoundClaim`: the original wording is false |
 | `HeapSyntax.lean` | — | admissible programs `LExpr.Adm` / `LSig.Adm` (an extra hypothesis) |
@@ -193,7 +193,7 @@ wording that turned out to be false is kept in a block comment next to its count
 
 ## Building and checking
 
-```
+```sh
 lake build
 ```
 
