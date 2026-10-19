@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rust Rc Copy-on-Write (Perceus) In-Place Reversal Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import ReactDOM from 'react-dom/client';
+
+    function getStepsForSharedTail(algoMode) {
+      // Nodes:
+      // n1: 0x100 (val: 1)
+      // n11: 0x110 (val: 11, list2 head)
+      // n2: 0x200 (val: 2, shared)
+      // n3: 0x300 (val: 3, shared)
+      // n2_cow: 0x220 (val: 2, COW new)
+      // n3_cow: 0x320 (val: 3, COW new)
+
+      return [
+        {
+          lineWhile: 1, lineTail: 1,
+          xs: "0x100", acc: "null", rc_node: null, getMut: null,
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 1 },
+          arrows: [
+            { from: "0x100", to: "0x200", type: "forward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Initial State: Shared Tail (list1: 1->2->3, list2: 11->2->3)",
+          desc: "list1 starts at 0x100. list2 starts at 0x110. Both converge on Node 2 (0x200), giving it RC = 2."
+        },
+        // --- Node 1: Unique ---
+        {
+          lineWhile: 3, lineTail: 3,
+          xs: "0x100", acc: "null", rc_node: "0x100", getMut: "Some(&mut node) [RC == 1] -> UNIQUE!",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 1 },
+          arrows: [
+            { from: "0x100", to: "0x200", type: "forward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Node 1 (0x100): Rc::get_mut checks RC == 1",
+          desc: "Rc::get_mut(&mut rc_node) succeeds! Node 1 is uniquely owned by list1. Corresponds to Koka's is-unique."
+        },
+        {
+          lineWhile: 5, lineTail: 5,
+          xs: "0x200", acc: "null", rc_node: "0x100", getMut: "Some(&mut node) [RC == 1]",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 1 },
+          arrows: [
+            { from: "0x100", to: "0x200", type: "severed" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Node 1: xs = node.next.take()",
+          desc: "Forward pointer from 0x100 is severed. 0x200 moved into xs. Node 1 next is temporarily null."
+        },
+        {
+          lineWhile: 7, lineTail: 7,
+          xs: "0x200", acc: "0x100", rc_node: "0x100", getMut: "Some(&mut node) [RC == 1]",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Node 1: node.next = acc (IN-PLACE REUSE)",
+          desc: "Node 1 (0x100) next is set to acc (null). Zero allocation! Existing Rc heap cell at 0x100 is reused."
+        },
+
+        // --- Node 2: Shared! ---
+        {
+          lineWhile: 3, lineTail: 3,
+          xs: "0x200", acc: "0x100", rc_node: "0x200", getMut: "None [RC == 2] -> SHARED (COW)!",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Node 2 (0x200): Rc::get_mut fails (RC = 2)",
+          desc: "Rc::get_mut returns None because list2 also holds Node 2! In-place mutation would corrupt list2, so Rust branches to Copy-on-Write."
+        },
+        {
+          lineWhile: 10, lineTail: 10,
+          xs: "0x300", acc: "0x100", rc_node: "0x200", getMut: "None [RC == 2]",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 2, "0x300": 2 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300"],
+          title: "Node 2: xs = rc_node.next.clone()",
+          desc: "Cloning next advances xs to Node 3 (0x300) and increments Node 3's RC to 2."
+        },
+        {
+          lineWhile: 12, lineTail: 14,
+          xs: "0x300", acc: "0x220", rc_node: null, getMut: "None [COW Alloc]",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 1, "0x300": 2, "0x220": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+            { from: "0x220", to: "0x100", type: "cow-backward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300", "0x220"],
+          title: "Node 2: Allocate Fresh Node 2' (0x220) via COW",
+          desc: "Rc::new allocates brand-new Node 2' (0x220) pointing to Node 1 (0x100). rc_node is dropped, lowering original Node 2 RC back to 1!"
+        },
+
+        // --- Node 3: Shared via Parent ---
+        {
+          lineWhile: 3, lineTail: 3,
+          xs: "0x300", acc: "0x220", rc_node: "0x300", getMut: "None [RC == 2] -> SHARED (COW)!",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 1, "0x300": 2, "0x220": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+            { from: "0x220", to: "0x100", type: "cow-backward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300", "0x220"],
+          title: "Node 3 (0x300): Rc::get_mut fails (RC = 2)",
+          desc: "Node 3 is held by xs and original Node 2 (0x200). Rc::get_mut returns None $\to$ Copy-on-Write triggers again."
+        },
+        {
+          lineWhile: 12, lineTail: 14,
+          xs: "null", acc: "0x320", rc_node: null, getMut: "None [COW Alloc]",
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 1, "0x300": 1, "0x220": 1, "0x320": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+            { from: "0x220", to: "0x100", type: "cow-backward" },
+            { from: "0x320", to: "0x220", type: "cow-backward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300", "0x220", "0x320"],
+          title: "Node 3: Allocate Fresh Node 3' (0x320) via COW",
+          desc: "Fresh Node 3' (0x320) points to Node 2' (0x220). rc_node dropped, original Node 3 RC falls back to 1."
+        },
+
+        // --- Final Base Case ---
+        {
+          lineWhile: 18, lineTail: 18,
+          xs: "null", acc: "0x320", rc_node: null, getMut: null,
+          nodeRCs: { "0x100": 1, "0x110": 1, "0x200": 1, "0x300": 1, "0x220": 1, "0x320": 1 },
+          arrows: [
+            { from: "0x100", to: "null", type: "backward" },
+            { from: "0x110", to: "0x200", type: "shared-root" },
+            { from: "0x200", to: "0x300", type: "forward" },
+            { from: "0x300", to: "null", type: "forward" },
+            { from: "0x220", to: "0x100", type: "cow-backward" },
+            { from: "0x320", to: "0x220", type: "cow-backward" },
+          ],
+          visibleNodes: ["0x100", "0x110", "0x200", "0x300", "0x220", "0x320"],
+          title: "Reversal Complete: Both Lists Valid & Safe",
+          desc: "Reversed list1: [3' @ 0x320] -> [2' @ 0x220] -> [1 @ 0x100] (Node 1 was reused in-place!). list2: [11 @ 0x110] -> [2 @ 0x200] -> [3 @ 0x300] is completely untouched!"
+        }
+      ];
+    }
+
+    const nodeMeta = {
+      "0x100": { val: 1, label: "Node 1", x: 40, y: 50, tag: "REUSED IN-PLACE", color: "border-emerald-500" },
+      "0x110": { val: 11, label: "Node 11 (list2)", x: 40, y: 175, tag: "list2 ROOT", color: "border-sky-500" },
+      "0x200": { val: 2, label: "Node 2 (shared)", x: 270, y: 110, tag: "SHARED ORIGINAL", color: "border-amber-500" },
+      "0x300": { val: 3, label: "Node 3 (shared)", x: 500, y: 110, tag: "SHARED ORIGINAL", color: "border-amber-500" },
+      "0x220": { val: 2, label: "Node 2' (COW)", x: 270, y: 260, tag: "NEW COW ALLOC", color: "border-purple-500" },
+      "0x320": { val: 3, label: "Node 3' (COW)", x: 500, y: 260, tag: "NEW COW ALLOC", color: "border-purple-500" }
+    };
+
+    function App() {
+      const [algoMode, setAlgoMode] = useState('while'); // 'while' | 'tail'
+      const [stepIdx, setStepIdx] = useState(0);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [speed, setSpeed] = useState(1600);
+
+      const steps = useMemo(() => getStepsForSharedTail(algoMode), [algoMode]);
+      const current = steps[stepIdx] || steps[0];
+
+      useEffect(() => {
+        if (!isPlaying) return;
+        const timer = setTimeout(() => {
+          if (stepIdx < steps.length - 1) {
+            setStepIdx(s => s + 1);
+          } else {
+            setIsPlaying(false);
+          }
+        }, speed);
+        return () => clearTimeout(timer);
+      }, [isPlaying, stepIdx, steps.length, speed]);
+
+      const whileCode = [
+        { num: 1, text: "pub fn reverse<T: Clone>(mut xs: Link<T>) -> Link<T> {" },
+        { num: 2, text: "    let mut acc = None;" },
+        { num: 3, text: "    while let Some(mut rc_node) = xs {" },
+        { num: 4, text: "        match Rc::get_mut(&mut rc_node) {" },
+        { num: 5, text: "            Some(node) => { // RC == 1: IN-PLACE" },
+        { num: 6, text: "                xs = node.next.take();" },
+        { num: 7, text: "                node.next = acc;" },
+        { num: 8, text: "                acc = Some(rc_node); // Reuse block!" },
+        { num: 9, text: "            }" },
+        { num: 10, text: "            None => { // RC > 1: COPY-ON-WRITE" },
+        { num: 11, text: "                xs = rc_node.next.clone();" },
+        { num: 12, text: "                acc = Some(Rc::new(Node {" },
+        { num: 13, text: "                    val: rc_node.val.clone()," },
+        { num: 14, text: "                    next: acc," },
+        { num: 15, text: "                }));" },
+        { num: 16, text: "            }" },
+        { num: 17, text: "        }" },
+        { num: 18, text: "    }" },
+        { num: 19, text: "    acc" },
+        { num: 20, text: "}" },
+      ];
+
+      const tailCode = [
+        { num: 1, text: "fn reverse_rc_tail_acc<T: Clone>(xs: Link<T>, acc: Link<T>) -> Link<T> {" },
+        { num: 2, text: "    match xs {" },
+        { num: 3, text: "        Some(mut rc_node) => match Rc::get_mut(&mut rc_node) {" },
+        { num: 4, text: "            Some(node) => { // UNIQUE: IN-PLACE" },
+        { num: 5, text: "                let next = node.next.take();" },
+        { num: 6, text: "                node.next = acc;" },
+        { num: 7, text: "                reverse_rc_tail_acc(next, Some(rc_node))" },
+        { num: 8, text: "            }" },
+        { num: 9, text: "            None => { // SHARED: COPY-ON-WRITE" },
+        { num: 10, text: "                let next = rc_node.next.clone();" },
+        { num: 11, text: "                let val = rc_node.val.clone();" },
+        { num: 12, text: "                drop(rc_node); // Critical for TCO" },
+        { num: 13, text: "                let new_node = Rc::new(Node { val, next: acc });" },
+        { num: 14, text: "                reverse_rc_tail_acc(next, Some(new_node))" },
+        { num: 15, text: "            }" },
+        { num: 16, text: "        }," },
+        { num: 17, text: "        None => acc," },
+        { num: 18, text: "    }" },
+        { num: 19, text: "}" },
+      ];
+
+      const activeLine = algoMode === 'while' ? current.lineWhile : current.lineTail;
+      const codeLines = algoMode === 'while' ? whileCode : tailCode;
+
+      return React.createElement('div', { className: 'max-w-6xl mx-auto p-6 space-y-6' },
+        // Header
+        React.createElement('div', { className: 'flex justify-between items-center border-b border-slate-800 pb-4' },
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'text-2xl font-bold tracking-tight text-white flex items-center gap-3' },
+              'Rust Rc Copy-on-Write (Perceus) Visualizer',
+              React.createElement('span', { className: 'text-xs bg-purple-500/20 text-purple-300 font-mono px-2 py-0.5 rounded border border-purple-500/30' },
+                'Rc::get_mut ⇄ is-unique'
+              )
+            ),
+            React.createElement('p', { className: 'text-sm text-slate-400 mt-1' },
+              'In-place mutation when RC == 1, automatic fallback to fresh allocation when RC > 1.'
+            )
+          ),
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('span', { className: 'text-xs text-slate-400 font-mono mr-1' }, 'Algorithm:'),
+            React.createElement('button', {
+              className: `text-xs px-3 py-1.5 rounded font-mono border ${
+                algoMode === 'while' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-300'
+              }`,
+              onClick: () => { setAlgoMode('while'); setStepIdx(0); setIsPlaying(false); }
+            }, 'while-loop'),
+            React.createElement('button', {
+              className: `text-xs px-3 py-1.5 rounded font-mono border ${
+                algoMode === 'tail' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-300'
+              }`,
+              onClick: () => { setAlgoMode('tail'); setStepIdx(0); setIsPlaying(false); }
+            }, 'tail-rec (FIP)')
+          )
+        ),
+
+        // Narrative Box
+        React.createElement('div', { className: 'bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg' },
+          React.createElement('div', { className: 'flex justify-between items-center mb-1' },
+            React.createElement('div', { className: 'text-xs font-semibold tracking-wider uppercase text-purple-400 font-mono' },
+              `Step ${stepIdx + 1} of ${steps.length}: ${current.title}`
+            ),
+            current.getMut && React.createElement('div', {
+              className: `text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                current.getMut.includes('UNIQUE') ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`
+            }, current.getMut)
+          ),
+          React.createElement('p', { className: 'text-sm text-slate-300' }, current.desc)
+        ),
+
+        // Grid: Code vs Stack
+        React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-12 gap-6' },
+          // Code Box
+          React.createElement('div', { className: 'md:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-xs' },
+            React.createElement('div', { className: 'text-slate-400 text-[11px] mb-3 uppercase tracking-wider font-semibold border-b border-slate-800 pb-1 flex justify-between' },
+              React.createElement('span', null, 'Active Execution Frame'),
+              React.createElement('span', { className: 'text-purple-400' }, algoMode === 'while' ? 'Iterative while let' : 'Tail-Recursive')
+            ),
+            React.createElement('div', { className: 'space-y-0.5' },
+              codeLines.map(line => {
+                const isActive = line.num === activeLine;
+                return React.createElement('div', {
+                  key: line.num,
+                  className: `flex items-center px-2 py-0.5 rounded transition-colors ${
+                    isActive ? 'bg-purple-500/20 text-purple-200 font-bold border-l-2 border-purple-400' : 'text-slate-400'
+                  }`
+                },
+                  React.createElement('span', { className: 'w-6 text-slate-600 select-none text-[10px] shrink-0' }, line.num),
+                  React.createElement('span', { className: 'whitespace-pre font-mono' }, line.text)
+                );
+              })
+            )
+          ),
+
+          // Stack Registers
+          React.createElement('div', { className: 'md:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-xs' },
+            React.createElement('div', { className: 'text-slate-400 text-[11px] mb-3 uppercase tracking-wider font-semibold border-b border-slate-800 pb-1' },
+              'CPU Registers & Borrow Check'
+            ),
+            React.createElement('div', { className: 'space-y-2' },
+              [
+                { label: 'xs (current input)', val: current.xs, color: 'border-sky-500 text-sky-400' },
+                { label: 'acc (accumulator)', val: current.acc, color: 'border-emerald-500 text-emerald-400' },
+                { label: 'rc_node (being checked)', val: current.rc_node || '—', color: 'border-amber-500 text-amber-400' },
+                { label: 'Rc::get_mut(&mut rc_node)', val: current.getMut || 'idle', color: current.getMut && current.getMut.includes('UNIQUE') ? 'border-emerald-500 text-emerald-400' : (current.getMut ? 'border-amber-500 text-amber-400' : 'border-slate-700 text-slate-500') },
+              ].map(reg => React.createElement('div', {
+                key: reg.label,
+                className: `flex justify-between items-center bg-slate-950/80 px-3 py-2 rounded border-l-2 ${reg.color}`
+              },
+                React.createElement('span', { className: 'text-slate-400' }, reg.label),
+                React.createElement('span', { className: 'font-semibold' }, reg.val)
+              ))
+            )
+          )
+        ),
+
+        // Heap Canvas Panel
+        React.createElement('div', { className: 'bg-slate-900 border border-slate-800 rounded-xl p-5' },
+          React.createElement('div', { className: 'text-slate-400 text-xs font-mono mb-2 uppercase tracking-wider font-semibold flex justify-between' },
+            React.createElement('span', null, 'Heap Memory & Reference Counts'),
+            React.createElement('span', { className: 'text-slate-500' }, 'Green = RC:1 (Unique) | Amber = RC:2 (Shared) | Purple = COW Allocated')
+          ),
+
+          React.createElement('div', { className: 'overflow-x-auto py-2' },
+            React.createElement('svg', {
+              width: 740,
+              height: 380,
+              className: 'select-none'
+            },
+              React.createElement('defs', null,
+                React.createElement('marker', { id: 'arrow-forward', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#38bdf8' })
+                ),
+                React.createElement('marker', { id: 'arrow-backward', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#10b981' })
+                ),
+                React.createElement('marker', { id: 'arrow-cow', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#c084fc' })
+                ),
+                React.createElement('marker', { id: 'arrow-shared', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#f59e0b' })
+                )
+              ),
+
+              // Render Arrows
+              current.arrows.map((ar, i) => {
+                const src = nodeMeta[ar.from];
+                if (ar.to === 'null') {
+                  return React.createElement('g', { key: i },
+                    React.createElement('line', {
+                      x1: src.x + 140, y1: src.y + 40,
+                      x2: src.x + 175, y2: src.y + 40,
+                      stroke: '#64748b', strokeWidth: 2
+                    }),
+                    React.createElement('text', {
+                      x: src.x + 182, y: src.y + 44,
+                      fill: '#64748b', fontSize: 11, fontFamily: 'monospace'
+                    }, 'null')
+                  );
+                }
+
+                const dst = nodeMeta[ar.to];
+                if (!dst) return null;
+
+                if (ar.type === 'forward') {
+                  return React.createElement('line', {
+                    key: i,
+                    x1: src.x + 140, y1: src.y + 40,
+                    x2: dst.x, y2: dst.y + 40,
+                    stroke: '#38bdf8', strokeWidth: 2.5,
+                    markerEnd: 'url(#arrow-forward)'
+                  });
+                } else if (ar.type === 'shared-root') {
+                  // list2 pointing to Node 2
+                  return React.createElement('line', {
+                    key: i,
+                    x1: src.x + 140, y1: src.y + 40,
+                    x2: dst.x, y2: dst.y + 50,
+                    stroke: '#f59e0b', strokeWidth: 2.5,
+                    markerEnd: 'url(#arrow-shared)'
+                  });
+                } else if (ar.type === 'severed') {
+                  return React.createElement('g', { key: i },
+                    React.createElement('line', {
+                      x1: src.x + 140, y1: src.y + 40,
+                      x2: dst.x, y2: dst.y + 40,
+                      stroke: '#ef4444', strokeWidth: 2, strokeDasharray: '4 4'
+                    }),
+                    React.createElement('text', {
+                      x: (src.x + dst.x) / 2 + 30, y: src.y + 25,
+                      fill: '#ef4444', fontSize: 10, fontFamily: 'monospace', fontWeight: 'bold'
+                    }, '✂ take()')
+                  );
+                } else if (ar.type === 'backward') {
+                  return React.createElement('line', {
+                    key: i,
+                    x1: src.x + 140, y1: src.y + 40,
+                    x2: src.x + 175, y2: src.y + 40,
+                    stroke: '#10b981', strokeWidth: 2.5,
+                    markerEnd: 'url(#arrow-backward)'
+                  });
+                } else if (ar.type === 'cow-backward') {
+                  // Purple COW arc
+                  const d = `M ${src.x} ${src.y + 40} C ${src.x - 40} ${src.y + 40}, ${dst.x + 140} ${dst.y + 40}, ${dst.x + 140} ${dst.y + 40}`;
+                  return React.createElement('path', {
+                    key: i,
+                    d, fill: 'none', stroke: '#c084fc', strokeWidth: 2.5,
+                    markerEnd: 'url(#arrow-cow)'
+                  });
+                }
+                return null;
+              }),
+
+              // Render Visible Nodes
+              current.visibleNodes.map(addr => {
+                const meta = nodeMeta[addr];
+                const rc = current.nodeRCs[addr] || 1;
+                const isCurrent = current.rc_node === addr;
+
+                return React.createElement('g', { key: addr },
+                  // Node Box
+                  React.createElement('rect', {
+                    x: meta.x, y: meta.y,
+                    width: 140, height: 80, rx: 8,
+                    fill: '#020617',
+                    stroke: isCurrent ? '#f59e0b' : (addr.includes('220') || addr.includes('320') ? '#a855f7' : (rc > 1 ? '#f59e0b' : '#334155')),
+                    strokeWidth: isCurrent ? 2.5 : 1.5,
+                    filter: isCurrent ? 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.4))' : 'none'
+                  }),
+                  // Header
+                  React.createElement('rect', {
+                    x: meta.x, y: meta.y,
+                    width: 140, height: 22, rx: 6,
+                    fill: '#0f172a'
+                  }),
+                  React.createElement('text', {
+                    x: meta.x + 8, y: meta.y + 15,
+                    fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace', fontWeight: 'bold'
+                  }, addr),
+                  // RC Badge
+                  React.createElement('rect', {
+                    x: meta.x + 85, y: meta.y + 3,
+                    width: 48, height: 16, rx: 4,
+                    fill: rc > 1 ? '#78350f' : '#064e3b'
+                  }),
+                  React.createElement('text', {
+                    x: meta.x + 90, y: meta.y + 14,
+                    fill: rc > 1 ? '#fde68a' : '#6ee7b7',
+                    fontSize: 9, fontFamily: 'monospace', fontWeight: 'bold'
+                  }, `RC: ${rc}`),
+                  // Value
+                  React.createElement('text', {
+                    x: meta.x + 10, y: meta.y + 44,
+                    fill: '#e2e8f0', fontSize: 12, fontFamily: 'monospace'
+                  }, `val: ${meta.val}`),
+                  // Tag
+                  React.createElement('text', {
+                    x: meta.x + 10, y: meta.y + 64,
+                    fill: meta.tag.includes('COW') ? '#c084fc' : (meta.tag.includes('REUSED') ? '#34d399' : '#64748b'),
+                    fontSize: 9, fontFamily: 'monospace', fontWeight: 'bold'
+                  }, meta.tag)
+                );
+              })
+            )
+          )
+        ),
+
+        // Playback Controls
+        React.createElement('div', { className: 'flex justify-between items-center bg-slate-900 border border-slate-800 rounded-xl p-4' },
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === 0,
+              onClick: () => setStepIdx(0)
+            }, '⏮ Reset'),
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === 0,
+              onClick: () => setStepIdx(s => Math.max(0, s - 1))
+            }, '◀ Prev'),
+            React.createElement('button', {
+              className: 'bg-purple-600 hover:bg-purple-500 px-4 py-1.5 rounded text-xs text-white font-medium',
+              onClick: () => setIsPlaying(p => !p)
+            }, isPlaying ? '⏸ Pause' : '▶ Play'),
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === steps.length - 1,
+              onClick: () => setStepIdx(s => Math.min(steps.length - 1, s + 1))
+            }, 'Next ▶')
+          ),
+
+          React.createElement('div', { className: 'flex items-center gap-4 text-xs font-mono text-slate-400' },
+            React.createElement('span', null, `Speed: ${(speed / 1000).toFixed(1)}s`),
+            React.createElement('input', {
+              type: 'range',
+              min: 500, max: 3000, step: 200,
+              value: speed,
+              onChange: e => setSpeed(Number(e.target.value)),
+              className: 'w-28'
+            })
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>

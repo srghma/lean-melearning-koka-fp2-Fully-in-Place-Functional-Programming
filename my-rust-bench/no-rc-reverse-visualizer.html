@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rust & Koka FIP In-Place Reversal Visualizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client"
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useState, useEffect, useMemo } from 'react';
+    import ReactDOM from 'react-dom/client';
+
+    const DEFAULT_LIST = [1, 2, 3];
+
+    function generateSteps(initialValues) {
+      const addresses = initialValues.map((_, i) => `0x${(100 + i * 16).toString(16).toUpperCase()}`);
+      const n = initialValues.length;
+      const steps = [];
+
+      let heapPointers = initialValues.map((_, i) => (i < n - 1 ? i + 1 : null));
+      let xs = 0;
+      let acc = null;
+
+      steps.push({
+        line: 1,
+        xs: 0,
+        acc: null,
+        node: null,
+        next: null,
+        heap: [...heapPointers],
+        severed: null,
+        title: "Initial Call: reverse_acc(xs, None)",
+        desc: `List head starts at ${addresses[0]}. Accumulator is initialized to None (null / 0x0).`
+      });
+
+      for (let i = 0; i < n; i++) {
+        const currNode = i;
+        const nextTarget = heapPointers[currNode];
+
+        steps.push({
+          line: 3,
+          xs: currNode,
+          acc,
+          node: currNode,
+          next: null,
+          heap: [...heapPointers],
+          severed: null,
+          title: `Match Node: Cons(${initialValues[currNode]}, ...) @ ${addresses[currNode]}`,
+          desc: `Ownership of heap block ${addresses[currNode]} acquired. Corresponds to Koka's unique reuse credit (◇₂).`
+        });
+
+        const heapAfterTake = [...heapPointers];
+        heapAfterTake[currNode] = null;
+        steps.push({
+          line: 4,
+          xs: currNode,
+          acc,
+          node: currNode,
+          next: nextTarget,
+          heap: heapAfterTake,
+          severed: { from: currNode, to: nextTarget },
+          title: `take(): Sever forward pointer`,
+          desc: `node.next.take() sets ${addresses[currNode]}->next to null (0x0) and moves the rest of the list into local variable 'next'.`
+        });
+        heapPointers = heapAfterTake;
+
+        const heapAfterRewire = [...heapPointers];
+        heapAfterRewire[currNode] = acc;
+        steps.push({
+          line: 5,
+          xs: currNode,
+          acc,
+          node: currNode,
+          next: nextTarget,
+          heap: heapAfterRewire,
+          severed: null,
+          title: `node.next = acc: IN-PLACE POINTER FLIP`,
+          desc: `Heap cell ${addresses[currNode]} is mutated in-place to point backwards to ${acc !== null ? addresses[acc] : 'null'}. Zero malloc / Zero free!`
+        });
+        heapPointers = heapAfterRewire;
+
+        acc = currNode;
+        xs = nextTarget;
+        steps.push({
+          line: 6,
+          xs,
+          acc,
+          node: null,
+          next: null,
+          heap: [...heapPointers],
+          severed: null,
+          title: `Tail Call: reverse_acc(next, Some(node))`,
+          desc: `TCO / FIP in action: Arguments updated in-place. Stack depth stays O(1). acc is now ${addresses[acc]}.`
+        });
+      }
+
+      steps.push({
+        line: 8,
+        xs: null,
+        acc,
+        node: null,
+        next: null,
+        heap: [...heapPointers],
+        severed: null,
+        title: "Base Case: match None => acc",
+        desc: `xs is None (null). The accumulated reversed list starting at ${addresses[acc]} is returned. Total allocations: 0.`
+      });
+
+      return { steps, addresses };
+    }
+
+    function App() {
+      const [values, setValues] = useState(DEFAULT_LIST);
+      const [inputStr, setInputStr] = useState(DEFAULT_LIST.join(', '));
+      const [stepIdx, setStepIdx] = useState(0);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [speed, setSpeed] = useState(1500);
+
+      const { steps, addresses } = useMemo(() => generateSteps(values), [values]);
+      const current = steps[stepIdx] || steps[0];
+
+      useEffect(() => {
+        if (!isPlaying) return;
+        const timer = setTimeout(() => {
+          if (stepIdx < steps.length - 1) {
+            setStepIdx(s => s + 1);
+          } else {
+            setIsPlaying(false);
+          }
+        }, speed);
+        return () => clearTimeout(timer);
+      }, [isPlaying, stepIdx, steps.length, speed]);
+
+      const handleUpdateList = () => {
+        const parsed = inputStr.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+        if (parsed.length >= 2 && parsed.length <= 6) {
+          setValues(parsed);
+          setStepIdx(0);
+          setIsPlaying(false);
+        }
+      };
+
+      const codeLines = [
+        { num: 1, text: "fn reverse_acc<T>(xs: Link<T>, acc: Link<T>) -> Link<T> {" },
+        { num: 2, text: "    match xs {" },
+        { num: 3, text: "        Some(mut node) => {" },
+        { num: 4, text: "            let next = node.next.take();" },
+        { num: 5, text: "            node.next = acc;" },
+        { num: 6, text: "            reverse_acc(next, Some(node))" },
+        { num: 7, text: "        }" },
+        { num: 8, text: "        None => acc," },
+        { num: 9, text: "    }" },
+        { num: 10, text: "}" },
+      ];
+
+      const nodeW = 140;
+      const nodeH = 85;
+      const gap = 80;
+      const startX = 40;
+      const heapY = 60;
+
+      return React.createElement('div', { className: 'max-w-6xl mx-auto p-6 space-y-6' },
+        // Header
+        React.createElement('div', { className: 'flex justify-between items-center border-b border-slate-800 pb-4' },
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'text-2xl font-bold tracking-tight text-white flex items-center gap-3' },
+              'Rust & Koka FIP In-Place Reversal',
+              React.createElement('span', { className: 'text-xs bg-emerald-500/20 text-emerald-300 font-mono px-2 py-0.5 rounded border border-emerald-500/30' }, 'Zero Allocation O(1) Stack')
+            ),
+            React.createElement('p', { className: 'text-sm text-slate-400 mt-1' }, 'Step-by-step visual execution of pointer mutation and tail-call reuse.')
+          ),
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('input', {
+              className: 'bg-slate-900 border border-slate-700 text-xs px-2 py-1.5 rounded font-mono text-slate-200 w-36',
+              value: inputStr,
+              onChange: e => setInputStr(e.target.value)
+            }),
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 text-xs px-3 py-1.5 rounded text-slate-200 border border-slate-700',
+              onClick: handleUpdateList
+            }, 'Reset List')
+          )
+        ),
+
+        // Narrative Box
+        React.createElement('div', { className: 'bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg' },
+          React.createElement('div', { className: 'flex justify-between items-center mb-1' },
+            React.createElement('div', { className: 'text-xs font-semibold tracking-wider uppercase text-emerald-400 font-mono' },
+              `Step ${stepIdx + 1} of ${steps.length}: ${current.title}`
+            ),
+            React.createElement('div', { className: 'text-xs text-slate-500 font-mono' }, 'Stack Depth: 1 (TCO constant)')
+          ),
+          React.createElement('p', { className: 'text-sm text-slate-300' }, current.desc)
+        ),
+
+        // Center Grid: Code vs Stack
+        React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-12 gap-6' },
+          // Rust Code with preserved whitespace
+          React.createElement('div', { className: 'md:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-xs' },
+            React.createElement('div', { className: 'text-slate-400 text-[11px] mb-3 uppercase tracking-wider font-semibold border-b border-slate-800 pb-1 flex justify-between' },
+              React.createElement('span', null, 'Active Execution Frame'),
+              React.createElement('span', { className: 'text-emerald-400' }, 'Rust / Koka FIP')
+            ),
+            React.createElement('div', { className: 'space-y-1' },
+              codeLines.map(line => {
+                const isActive = line.num === current.line;
+                return React.createElement('div', {
+                  key: line.num,
+                  className: `flex items-center px-2 py-0.5 rounded transition-colors ${
+                    isActive ? 'bg-emerald-500/20 text-emerald-200 font-bold border-l-2 border-emerald-400' : 'text-slate-400'
+                  }`
+                },
+                  React.createElement('span', { className: 'w-6 text-slate-600 select-none text-[10px] shrink-0' }, line.num),
+                  React.createElement('span', { className: 'whitespace-pre font-mono' }, line.text)
+                );
+              })
+            )
+          ),
+
+          // Stack Registers Panel
+          React.createElement('div', { className: 'md:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 font-mono text-xs' },
+            React.createElement('div', { className: 'text-slate-400 text-[11px] mb-3 uppercase tracking-wider font-semibold border-b border-slate-800 pb-1' },
+              'CPU Registers / Stack Pointers'
+            ),
+            React.createElement('div', { className: 'space-y-2.5' },
+              [
+                { label: 'xs (input)', val: current.xs !== null ? addresses[current.xs] : 'null (None)', color: 'border-sky-500 text-sky-400' },
+                { label: 'acc (accumulator)', val: current.acc !== null ? addresses[current.acc] : 'null (None)', color: 'border-emerald-500 text-emerald-400' },
+                { label: 'node (current)', val: current.node !== null ? addresses[current.node] : '—', color: 'border-amber-500 text-amber-400' },
+                { label: 'next (rest of list)', val: current.next !== null ? addresses[current.next] : (current.node !== null ? 'null (0x0)' : '—'), color: 'border-purple-500 text-purple-400' },
+              ].map(reg => React.createElement('div', {
+                key: reg.label,
+                className: `flex justify-between items-center bg-slate-950/80 px-3 py-2 rounded border-l-2 ${reg.color}`
+              },
+                React.createElement('span', { className: 'text-slate-400' }, reg.label),
+                React.createElement('span', { className: 'font-semibold' }, reg.val)
+              ))
+            )
+          )
+        ),
+
+        // Heap Canvas Panel
+        React.createElement('div', { className: 'bg-slate-900 border border-slate-800 rounded-xl p-5' },
+          React.createElement('div', { className: 'text-slate-400 text-xs font-mono mb-2 uppercase tracking-wider font-semibold flex justify-between' },
+            React.createElement('span', null, 'Physical Heap Memory (Heap Cells Never Move)'),
+            React.createElement('span', { className: 'text-slate-500' }, 'Pointer size: 64-bit | Null Pointer Optimized')
+          ),
+
+          React.createElement('div', { className: 'overflow-x-auto py-4' },
+            React.createElement('svg', {
+              width: Math.max(760, values.length * (nodeW + gap) + 120),
+              height: 240,
+              className: 'select-none'
+            },
+              React.createElement('defs', null,
+                React.createElement('marker', { id: 'arrow-forward', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#38bdf8' })
+                ),
+                React.createElement('marker', { id: 'arrow-backward', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#10b981' })
+                ),
+                React.createElement('marker', { id: 'arrow-severed', markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: 'auto' },
+                  React.createElement('path', { d: 'M0,1 L7,4 L0,7 Z', fill: '#ef4444' })
+                )
+              ),
+
+              // Render Arrows
+              current.heap.map((targetIdx, srcIdx) => {
+                const x1 = startX + srcIdx * (nodeW + gap);
+                if (targetIdx === null) {
+                  return React.createElement('g', { key: `arrow-null-${srcIdx}` },
+                    React.createElement('line', {
+                      x1: x1 + nodeW,
+                      y1: heapY + 42,
+                      x2: x1 + nodeW + 30,
+                      y2: heapY + 42,
+                      stroke: '#64748b',
+                      strokeWidth: 2
+                    }),
+                    React.createElement('text', {
+                      x: x1 + nodeW + 36,
+                      y: heapY + 46,
+                      fill: '#64748b',
+                      fontSize: 10,
+                      fontFamily: 'monospace'
+                    }, 'null')
+                  );
+                }
+
+                if (targetIdx > srcIdx) {
+                  const x2 = startX + targetIdx * (nodeW + gap);
+                  return React.createElement('line', {
+                    key: `arrow-${srcIdx}-${targetIdx}`,
+                    x1: x1 + nodeW,
+                    y1: heapY + 42,
+                    x2: x2,
+                    y2: heapY + 42,
+                    stroke: '#38bdf8',
+                    strokeWidth: 2.5,
+                    markerEnd: 'url(#arrow-forward)'
+                  });
+                } else {
+                  const x2 = startX + targetIdx * (nodeW + gap);
+                  const startPtX = x1 + nodeW / 2;
+                  const endPtX = x2 + nodeW / 2;
+                  const arcY = heapY + nodeH + 45;
+                  const d = `M ${startPtX} ${heapY + nodeH} Q ${(startPtX + endPtX) / 2} ${arcY + 30} ${endPtX} ${heapY + nodeH}`;
+                  return React.createElement('path', {
+                    key: `arrow-back-${srcIdx}-${targetIdx}`,
+                    d,
+                    fill: 'none',
+                    stroke: '#10b981',
+                    strokeWidth: 3,
+                    markerEnd: 'url(#arrow-backward)'
+                  });
+                }
+              }),
+
+              // Severed Arrow indicator
+              current.severed && current.severed.to !== null && React.createElement('g', null,
+                React.createElement('line', {
+                  x1: startX + current.severed.from * (nodeW + gap) + nodeW,
+                  y1: heapY + 42,
+                  x2: startX + current.severed.to * (nodeW + gap),
+                  y2: heapY + 42,
+                  stroke: '#ef4444',
+                  strokeWidth: 2,
+                  strokeDasharray: '4 4'
+                }),
+                React.createElement('text', {
+                  x: startX + current.severed.from * (nodeW + gap) + nodeW + 20,
+                  y: heapY + 30,
+                  fill: '#ef4444',
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                  fontWeight: 'bold'
+                }, '✂ take()')
+              ),
+
+              // Render Heap Boxes
+              values.map((val, idx) => {
+                const x = startX + idx * (nodeW + gap);
+                const isCurrNode = current.node === idx;
+                const isAcc = current.acc === idx;
+                const isXs = current.xs === idx;
+
+                let borderStroke = '#334155';
+                if (isCurrNode) borderStroke = '#f59e0b';
+                else if (isAcc) borderStroke = '#10b981';
+                else if (isXs) borderStroke = '#38bdf8';
+
+                return React.createElement('g', { key: idx },
+                  React.createElement('rect', {
+                    x,
+                    y: heapY,
+                    width: nodeW,
+                    height: nodeH,
+                    rx: 8,
+                    fill: '#020617',
+                    stroke: borderStroke,
+                    strokeWidth: isCurrNode || isAcc ? 2.5 : 1.5,
+                    filter: isCurrNode ? 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.4))' : 'none'
+                  }),
+                  React.createElement('rect', {
+                    x,
+                    y: heapY,
+                    width: nodeW,
+                    height: 24,
+                    rx: 6,
+                    fill: '#0f172a'
+                  }),
+                  React.createElement('text', {
+                    x: x + 10,
+                    y: heapY + 16,
+                    fill: '#94a3b8',
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    fontWeight: 'bold'
+                  }, addresses[idx]),
+
+                  React.createElement('text', {
+                    x: x + 12,
+                    y: heapY + 54,
+                    fill: '#e2e8f0',
+                    fontSize: 13,
+                    fontFamily: 'monospace'
+                  }, `val: ${val}`),
+
+                  React.createElement('text', {
+                    x: x + 12,
+                    y: heapY + 74,
+                    fill: '#64748b',
+                    fontSize: 10,
+                    fontFamily: 'monospace'
+                  }, `next: ${current.heap[idx] !== null ? addresses[current.heap[idx]] : 'null'}`)
+                );
+              })
+            )
+          )
+        ),
+
+        // Controls
+        React.createElement('div', { className: 'flex justify-between items-center bg-slate-900 border border-slate-800 rounded-xl p-4' },
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === 0,
+              onClick: () => setStepIdx(0)
+            }, '⏮ Reset'),
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === 0,
+              onClick: () => setStepIdx(s => Math.max(0, s - 1))
+            }, '◀ Prev'),
+            React.createElement('button', {
+              className: 'bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded text-xs text-white font-medium',
+              onClick: () => setIsPlaying(p => !p)
+            }, isPlaying ? '⏸ Pause' : '▶ Play'),
+            React.createElement('button', {
+              className: 'bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs text-slate-200 border border-slate-700 disabled:opacity-40',
+              disabled: stepIdx === steps.length - 1,
+              onClick: () => setStepIdx(s => Math.min(steps.length - 1, s + 1))
+            }, 'Next ▶')
+          ),
+
+          React.createElement('div', { className: 'flex items-center gap-4 text-xs font-mono text-slate-400' },
+            React.createElement('span', null, `Speed: ${(speed / 1000).toFixed(1)}s`),
+            React.createElement('input', {
+              type: 'range',
+              min: 400,
+              max: 3000,
+              step: 200,
+              value: speed,
+              onChange: e => setSpeed(Number(e.target.value)),
+              className: 'w-28'
+            })
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>

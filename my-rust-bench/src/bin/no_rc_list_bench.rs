@@ -1,5 +1,8 @@
 use easybench::bench_env;
 
+// ==========================================
+// 1. Boxed Singly-Linked List
+// ==========================================
 pub struct Node<T> {
     pub val: T,
     pub next: Option<Box<Node<T>>>,
@@ -17,7 +20,6 @@ impl<T> Default for List<T> {
 
 type Link<T> = Option<Box<Node<T>>>;
 
-// 1. Inlined Tail-Recursive version
 #[inline(always)]
 fn reverse_acc<T>(xs: Link<T>, acc: Link<T>) -> Link<T> {
     match xs {
@@ -83,12 +85,58 @@ impl<T> Drop for List<T> {
     }
 }
 
+// // ==========================================
+// // 2. Arena-Backed Linked List (Contiguous Memory)
+// // ==========================================
+// #[derive(Clone)]
+// pub struct ArenaNode<T> {
+//     pub val: T,
+//     pub next: Option<usize>,
+// }
+//
+// #[derive(Clone)]
+// pub struct ArenaList<T> {
+//     pub nodes: Vec<ArenaNode<T>>,
+//     pub head: Option<usize>,
+// }
+//
+// impl<T> ArenaList<T> {
+//     pub fn from_iter(iter: impl IntoIterator<Item = T>) -> Self {
+//         let mut nodes = Vec::new();
+//         let mut head = None;
+//         for (i, val) in iter.into_iter().enumerate() {
+//             nodes.push(ArenaNode { val, next: head });
+//             head = Some(i);
+//         }
+//         ArenaList { nodes, head }
+//     }
+//
+//     #[inline(always)]
+//     pub fn reverse(&mut self) {
+//         let mut acc = None;
+//         let mut curr = self.head;
+//         while let Some(idx) = curr {
+//             let node = unsafe { self.nodes.get_unchecked_mut(idx) };
+//             let next = node.next;
+//             node.next = acc;
+//             acc = Some(idx);
+//             curr = next;
+//         }
+//         self.head = acc;
+//     }
+// }
+
+// ==========================================
+// Benchmark Harness
+// ==========================================
 fn main() {
     let sizes = [100, 1_000, 10_000];
 
     for &n in &sizes {
         println!("=== List Size: {n} ===");
         let list: List<i32> = List::from_iter(0..n);
+        // let arena_list: ArenaList<i32> = ArenaList::from_iter(0..n);
+        let vec: Vec<i32> = (0..n).collect();
 
         let rec_stat = bench_env(list.clone(), |l| {
             let owned = std::mem::take(l);
@@ -102,23 +150,19 @@ fn main() {
             l.head.as_ref().map(|node| node.val)
         });
 
-        println!("tail-rec (inlined): {rec_stat}");
-        println!("iterative (while):  {iter_stat}\n");
+        // let arena_stat = bench_env(arena_list.clone(), |al| {
+        //     al.reverse();
+        //     al.head.map(|idx| al.nodes[idx].val)
+        // });
+
+        let vec_stat = bench_env(vec.clone(), |v| {
+            v.reverse();
+            v.first().copied()
+        });
+
+        println!("tail-rec (inlined):   {rec_stat}");
+        println!("iterative (while):    {iter_stat}");
+        // println!("arena-linked-list:    {arena_stat}");
+        println!("vec (slice::reverse): {vec_stat}\n");
     }
 }
-
-
-// #[no_mangle]
-// pub fn bench_rec(xs: Link<i32>) -> Link<i32> {
-//     reverse_acc(xs, None)
-// }
-//
-// #[no_mangle]
-// pub fn bench_iter(mut xs: Link<i32>) -> Link<i32> {
-//     let mut acc = None;
-//     while let Some(mut node) = xs {
-//         xs = std::mem::replace(&mut node.next, acc);
-//         acc = Some(node);
-//     }
-//     acc
-// }
