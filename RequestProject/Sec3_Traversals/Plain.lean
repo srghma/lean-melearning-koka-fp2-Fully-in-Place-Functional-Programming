@@ -24,27 +24,27 @@ open Koka FIP
 
 /-- Ordinary (non-`fip`) Koka functions from Sections 1 and 3. -/
 def plain := [KOKA|
-fun reverse-acc( xs : list<a>, acc : list<a> ) : list<a>
-  match xs
+fip fun reverse-acc( xs : list<a>, acc : list<a> ) : list<a>
+  match! xs
     Cons(x,xx) -> reverse-acc( xx, Cons(x,acc) )
     Nil -> acc
 
-fun reverse( xs : list<a> ) : list<a>
+fip fun reverse( xs : list<a> ) : list<a>
   reverse-acc(xs,Nil)
 
-fun append( xs : list<a>, ys : list<a> ) : list<a>
+fip fun append( xs : list<a>, ys : list<a> ) : list<a>
   match xs
     Cons(x,xx) -> Cons(x, append(xx, ys))
     Nil -> ys
 
-fun palindrome( xs : list<a> ) : list<a>
+fip fun palindrome( xs : list<a> ) : list<a>
   append(xs, reverse(xs))
 
 type tree<a>
   Bin(left : tree<a>, right : tree<a>)
   Tip(value : a)
 
-fun tmap(t : tree<a>, ^f : a -> b) : tree<b>
+fip fun tmap(t : tree<a>, ^f : a -> b) : tree<b>
   match! t
     Bin(l,r) ->
       val l' = tmap(l,f)
@@ -52,7 +52,7 @@ fun tmap(t : tree<a>, ^f : a -> b) : tree<b>
       Bin(l', r')
     Tip(a) -> Tip(f(a))
 
-fun is-pos(x : int) : bool
+fip fun is-pos(x : int) : bool
   x > 0
 ]
 
