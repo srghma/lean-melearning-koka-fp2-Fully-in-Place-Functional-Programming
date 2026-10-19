@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "bugstalker",
+      "request": "launch",
+      "name": "BugStalker: Verify (all)",
+      "program": "${workspaceFolder}/target/debug/verify",
+      "args": ["all"],
+      "preLaunchTask": "build-verify"
+    },
+    {
+      "type": "bugstalker",
+      "request": "launch",
+      "name": "BugStalker: Verify (preset 1)",
+      "program": "${workspaceFolder}/target/debug/verify",
+      "args": ["1"],
+      "preLaunchTask": "build-verify"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+default:
+    @just --list
+
+# Run verification trace (default runs all presets, or pass e.g.: just verify 3)
+verify PRESET="all":
+    cargo run --bin verify --features rc-debug -- {{ PRESET }}
+
+# Run verification silently without debug RC output
+verify-quiet PRESET="all":
+    cargo run --bin verify -- {{ PRESET }}
+
+# Run combined benchmarks in release mode (No-RC first, then RC)
+bench:
+    cargo run --release --bin bench
+
+# Check compilation of all targets with all features
+check:
+    cargo check --bins --lib --all-features
+
+# Format all files
+fmt:
+    cargo fmt

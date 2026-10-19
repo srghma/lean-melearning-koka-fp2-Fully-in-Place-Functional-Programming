@@ -1,5 +1,3 @@
-use easybench::bench_env;
-
 // ==========================================
 // 1. Boxed Singly-Linked List
 // ==========================================
@@ -18,7 +16,7 @@ impl<T> Default for List<T> {
     }
 }
 
-type Link<T> = Option<Box<Node<T>>>;
+pub type Link<T> = Option<Box<Node<T>>>;
 
 #[inline(always)]
 fn reverse_acc<T>(xs: Link<T>, acc: Link<T>) -> Link<T> {
@@ -125,44 +123,3 @@ impl<T> Drop for List<T> {
 //         self.head = acc;
 //     }
 // }
-
-// ==========================================
-// Benchmark Harness
-// ==========================================
-fn main() {
-    let sizes = [100, 1_000, 10_000];
-
-    for &n in &sizes {
-        println!("=== List Size: {n} ===");
-        let list: List<i32> = List::from_iter(0..n);
-        // let arena_list: ArenaList<i32> = ArenaList::from_iter(0..n);
-        let vec: Vec<i32> = (0..n).collect();
-
-        let rec_stat = bench_env(list.clone(), |l| {
-            let owned = std::mem::take(l);
-            *l = owned.reverse_rec();
-            l.head.as_ref().map(|node| node.val)
-        });
-
-        let iter_stat = bench_env(list.clone(), |l| {
-            let owned = std::mem::take(l);
-            *l = owned.reverse_iter();
-            l.head.as_ref().map(|node| node.val)
-        });
-
-        // let arena_stat = bench_env(arena_list.clone(), |al| {
-        //     al.reverse();
-        //     al.head.map(|idx| al.nodes[idx].val)
-        // });
-
-        let vec_stat = bench_env(vec.clone(), |v| {
-            v.reverse();
-            v.first().copied()
-        });
-
-        println!("tail-rec (inlined):   {rec_stat}");
-        println!("iterative (while):    {iter_stat}");
-        // println!("arena-linked-list:    {arena_stat}");
-        println!("vec (slice::reverse): {vec_stat}\n");
-    }
-}

@@ -10,7 +10,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
       'list1 (1->2), list2 (11->22), and list3 (13->23) all point into Node 3. Nodes 1 & 2 reuse in-place, while Nodes 3 & 4 trigger Copy-on-Write.',
     activeRoot: 'list1',
     canvasWidth: 840,
-    canvasHeight: 460,
+    canvasHeight: 480,
     roots: [
       { name: 'list1', targetAddr: '0x100', color: '#38bdf8' },
       { name: 'list2', targetAddr: '0x110', color: '#f59e0b' },
@@ -25,7 +25,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 1',
         next: '0x200',
         x: 40,
-        y: 40,
+        y: 35,
         tag: 'REUSED IN-PLACE'
       },
       {
@@ -35,7 +35,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 2',
         next: '0x300',
         x: 230,
-        y: 40,
+        y: 35,
         tag: 'REUSED IN-PLACE'
       },
       // Branch 2
@@ -46,7 +46,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 11',
         next: '0x210',
         x: 40,
-        y: 140,
+        y: 145,
         tag: 'list2 ROOT'
       },
       {
@@ -56,7 +56,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 22',
         next: '0x300',
         x: 230,
-        y: 140,
+        y: 145,
         tag: 'list2 NODE'
       },
       // Branch 3
@@ -67,7 +67,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 13',
         next: '0x230',
         x: 40,
-        y: 240,
+        y: 255,
         tag: 'list3 ROOT'
       },
       {
@@ -77,10 +77,10 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 23',
         next: '0x300',
         x: 230,
-        y: 240,
+        y: 255,
         tag: 'list3 NODE'
       },
-      // Shared tail (centered at y = 140)
+      // Shared tail (centered at y = 145)
       {
         id: 'n3',
         addr: '0x300',
@@ -88,7 +88,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 3 (shared 3x)',
         next: '0x400',
         x: 440,
-        y: 140,
+        y: 145,
         tag: 'SHARED (RC=3)'
       },
       {
@@ -98,7 +98,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 4 (shared)',
         next: null,
         x: 650,
-        y: 140,
+        y: 145,
         tag: 'SHARED (RC=1)'
       }
     ]
@@ -113,7 +113,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
       'An external reference holds Node 1. Every single node triggers Copy-on-Write because the original list is preserved intact.',
     activeRoot: 'list1',
     canvasWidth: 740,
-    canvasHeight: 380,
+    canvasHeight: 360,
     roots: [
       { name: 'list1', targetAddr: '0x100', color: '#38bdf8' },
       { name: 'clone', targetAddr: '0x100', color: '#f59e0b' }
@@ -126,7 +126,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 1',
         next: '0x200',
         x: 40,
-        y: 60,
+        y: 50,
         tag: 'SHARED HEAD'
       },
       {
@@ -136,7 +136,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 2',
         next: '0x300',
         x: 270,
-        y: 60,
+        y: 50,
         tag: 'SHARED VIA PARENT'
       },
       {
@@ -146,7 +146,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 3',
         next: null,
         x: 500,
-        y: 60,
+        y: 50,
         tag: 'SHARED VIA PARENT'
       }
     ]
@@ -174,7 +174,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 1',
         next: '0x200',
         x: 40,
-        y: 50,
+        y: 45,
         tag: 'REUSED IN-PLACE'
       },
       {
@@ -184,7 +184,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 11 (list2)',
         next: '0x200',
         x: 40,
-        y: 175,
+        y: 155,
         tag: 'list2 ROOT'
       },
       {
@@ -194,7 +194,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 2 (shared)',
         next: '0x300',
         x: 270,
-        y: 110,
+        y: 100,
         tag: 'SHARED ORIGINAL'
       },
       {
@@ -204,7 +204,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 3 (shared)',
         next: null,
         x: 500,
-        y: 110,
+        y: 100,
         tag: 'SHARED ORIGINAL'
       }
     ]
@@ -274,7 +274,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
       'Node 1 reuses in-place. Node 2 has an extra reference and branches to COW, protecting the external handle.',
     activeRoot: 'list1',
     canvasWidth: 840,
-    canvasHeight: 380,
+    canvasHeight: 360,
     roots: [
       { name: 'list1', targetAddr: '0x100', color: '#38bdf8' },
       { name: 'handle', targetAddr: '0x200', color: '#f59e0b' }
@@ -287,7 +287,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 1',
         next: '0x200',
         x: 40,
-        y: 60,
+        y: 50,
         tag: 'REUSED IN-PLACE'
       },
       {
@@ -297,7 +297,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 2',
         next: '0x300',
         x: 230,
-        y: 60,
+        y: 50,
         tag: 'SHARED (HANDLE)'
       },
       {
@@ -307,7 +307,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 3',
         next: '0x400',
         x: 430,
-        y: 60,
+        y: 50,
         tag: 'SHARED VIA PARENT'
       },
       {
@@ -317,7 +317,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         label: 'Node 4',
         next: null,
         x: 630,
-        y: 60,
+        y: 50,
         tag: 'SHARED VIA PARENT'
       }
     ]

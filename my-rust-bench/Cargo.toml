@@ -3,6 +3,22 @@ name = "reverse_bench"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "reverse_bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "verify"
+path = "src/bin/verify.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
+[features]
+default = []
+rc-debug = []
+
 [dependencies]
 easybench = "1.1"
 

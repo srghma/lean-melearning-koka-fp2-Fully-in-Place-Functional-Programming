@@ -104,6 +104,7 @@
     badgeType={current.badgeType}
   />
 
+  <!-- Code Frame on Left, Registers & Controls on Right -->
   <div class="grid grid-cols-1 gap-6 md:grid-cols-12">
     <div class="md:col-span-7">
       <CodePanel
@@ -113,8 +114,15 @@
         accentColor="purple"
       />
     </div>
-    <div class="md:col-span-5">
+    <div class="flex flex-col gap-4 md:col-span-5">
       <RegistersPanel title="CPU Registers & Borrow Check" {registers} />
+      <ControlsBar
+        bind:stepIdx
+        totalSteps={steps.length}
+        bind:isPlaying
+        bind:speed
+        accentColor="purple"
+      />
     </div>
   </div>
 
@@ -172,7 +180,7 @@
             <g>
               <rect
                 x={target.x - 30}
-                y={target.y - 25}
+                y={target.y - 24}
                 width="55"
                 height="18"
                 rx="4"
@@ -192,9 +200,9 @@
               </text>
               <line
                 x1={target.x - 5}
-                y1={target.y - 7}
+                y1={target.y - 6}
                 x2={target.x}
-                y2={target.y + 10}
+                y2={target.y + 12}
                 stroke={root.color}
                 stroke-width="1.5"
               />
@@ -207,23 +215,44 @@
           {@const src = nodeMeta[ar.from]}
           {#if src}
             {#if ar.to === 'null'}
-              <g>
-                <line
-                  x1={src.x + 140}
-                  y1={src.y + 40}
-                  x2={src.x + 175}
-                  y2={src.y + 40}
-                  stroke="#64748b"
-                  stroke-width="2"
-                />
-                <text
-                  x={src.x + 182}
-                  y={src.y + 44}
-                  fill="#64748b"
-                  font-size="11"
-                  font-family="monospace">null</text
-                >
-              </g>
+              {#if src.x < 500}
+                <g>
+                  <line
+                    x1={src.x + 35}
+                    y1={src.y + 80}
+                    x2={src.x + 35}
+                    y2={src.y + 105}
+                    stroke="#64748b"
+                    stroke-width="2"
+                    marker-end="url(#arrow-forward)"
+                  />
+                  <text
+                    x={src.x + 44}
+                    y={src.y + 102}
+                    fill="#64748b"
+                    font-size="10"
+                    font-family="monospace">null</text
+                  >
+                </g>
+              {:else}
+                <g>
+                  <line
+                    x1={src.x + 140}
+                    y1={src.y + 40}
+                    x2={src.x + 175}
+                    y2={src.y + 40}
+                    stroke="#64748b"
+                    stroke-width="2"
+                  />
+                  <text
+                    x={src.x + 182}
+                    y={src.y + 44}
+                    fill="#64748b"
+                    font-size="11"
+                    font-family="monospace">null</text
+                  >
+                </g>
+              {/if}
             {:else}
               {@const dst = nodeMeta[ar.to]}
               {#if dst}
@@ -241,13 +270,30 @@
                 {:else if ar.type === 'severed'}
                   <SeveredArrow x1={src.x + 140} y1={src.y + 40} x2={dst.x} y2={dst.y + 40} />
                 {:else if ar.type === 'backward'}
-                  {@const startPtX = src.x + 70}
-                  {@const endPtX = dst.x + 70}
-                  {@const d = `M ${startPtX} ${src.y + 80} Q ${(startPtX + endPtX) / 2} ${Math.max(src.y, dst.y) + 130} ${endPtX} ${dst.y + 80}`}
-                  <CurvedArrow {d} color="#10b981" markerId="arrow-backward" />
+                  {#if src.y === dst.y}
+                    {@const d = `M ${src.x + 30} ${src.y} C ${src.x + 30} ${src.y - 32}, ${dst.x + 110} ${dst.y - 32}, ${dst.x + 110} ${dst.y}`}
+                    <CurvedArrow {d} color="#10b981" markerId="arrow-backward" />
+                  {:else}
+                    {@const startPtX = src.x + 70}
+                    {@const endPtX = dst.x + 70}
+                    {@const d = `M ${startPtX} ${src.y} C ${startPtX} ${Math.min(src.y, dst.y) - 30}, ${endPtX} ${Math.min(src.y, dst.y) - 30}, ${endPtX} ${dst.y}`}
+                    <CurvedArrow {d} color="#10b981" markerId="arrow-backward" />
+                  {/if}
                 {:else if ar.type === 'cow-backward'}
-                  {@const d = `M ${src.x} ${src.y + 40} C ${src.x - 50} ${src.y + 40}, ${dst.x + 140} ${dst.y + 40}, ${dst.x + 140} ${dst.y + 40}`}
-                  <CurvedArrow {d} color="#c084fc" markerId="arrow-cow" />
+                  {#if src.y === dst.y}
+                    <line
+                      x1={src.x}
+                      y1={src.y + 40}
+                      x2={dst.x + 140}
+                      y2={dst.y + 40}
+                      stroke="#c084fc"
+                      stroke-width="2.5"
+                      marker-end="url(#arrow-cow)"
+                    />
+                  {:else}
+                    {@const d = `M ${src.x} ${src.y + 40} C ${src.x - 45} ${src.y + 40}, ${dst.x + 140 + 45} ${dst.y + 40}, ${dst.x + 140} ${dst.y + 40}`}
+                    <CurvedArrow {d} color="#c084fc" markerId="arrow-cow" />
+                  {/if}
                 {/if}
               {/if}
             {/if}
@@ -276,12 +322,4 @@
       </svg>
     </div>
   </div>
-
-  <ControlsBar
-    bind:stepIdx
-    totalSteps={steps.length}
-    bind:isPlaying
-    bind:speed
-    accentColor="purple"
-  />
 </div>
