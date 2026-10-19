@@ -241,6 +241,11 @@ inductive Head (sig : Sig) {n : Nat} : Expr n → Expr n → Prop where
   | prim (op : PrimOp) (a b : Int) :
       Head sig (.prim op [.lit a, .lit b]) (.val (boolVal (op.eval a b)))
 
+/-- A tuple of values does not reduce. -/
+theorem Head.not_ret {sig : Sig} {n : Nat} {vs : List (Val n)} {e : Expr n} :
+    ¬ Head sig (.ret vs) e := by
+  intro h; cases h
+
 /-- The small-step relation `E[e₁] ↦ E[e₂]` (rule *step*). -/
 inductive Step (sig : Sig) {n : Nat} : Expr n → Expr n → Prop where
   | step (E : ECtx n) (e1 e2 : Expr n) : Head sig e1 e2 → Step sig (E.plug e1) (E.plug e2)

@@ -35,7 +35,7 @@ inferred by our implementation", Appendix A):
 
 The compiler is an (unverified) front end: every property of the resulting code is
 established afterwards, on the core calculus — the FIP check by `FIP.Sig.check_sound`,
-the results of evaluation by `IR.Expr.eval_sound`.
+the results of evaluation by `FIP.Expr.evalTotal_sound`.
 -/
 
 namespace Koka
@@ -64,11 +64,44 @@ def primTypes : List String :=
   ["int", "int8", "int16", "int32", "int64", "char", "float64", "ssize_t"]
 
 /-- Substitute types for type variables. -/
-partial def Ty.subst (σ : List (String × Ty)) : Ty → Ty
+def Ty.subst (σ : List (String × Ty)) : Ty → Ty
   | .con n [] => (σ.lookup n).getD (.con n [])
   | .con n args => .con n (args.map (Ty.subst σ))
   | .fn as r => .fn (as.map (Ty.subst σ)) (Ty.subst σ r)
   | .tuple ts => .tuple (ts.map (Ty.subst σ))
+
+/-! ## Termination
+
+Every function of the compiler is total: there is no `partial` and no fuel.  Most
+functions recurse on the structure of their argument.  Unfolding definitions (type
+aliases, value types, destructed variables) recurses on a list of definitions from which
+the unfolded one is removed (`eraseKey`, `length_eraseKey_lt`), so that a recursive alias
+or value type is reported or left folded instead of being unfolded forever.  The
+compiler proper is well-founded on the size of the Koka code it compiles (`Expr.size`)
+and, for the pattern-matching matrix, on the size of its patterns and columns; where a
+measure is only known at run time it is checked (`noProgress`). -/
+
+/-- Remove the entries for the key `k` from an association list. -/
+def eraseKey {β : Type} (l : List (String × β)) (k : String) : List (String × β) :=
+  l.filter (·.1 != k)
+
+theorem length_eraseKey_lt {β : Type} {l : List (String × β)} {k : String} {v : β}
+    (h : l.lookup k = some v) : (eraseKey l k).length < l.length := by
+  unfold eraseKey
+  induction l with
+  | nil => simp at h
+  | cons p l ih =>
+    obtain ⟨a, b⟩ := p
+    have hle := List.length_filter_le (fun x : String × β => x.1 != k) l
+    by_cases hk : k = a
+    · subst hk
+      simp [List.filter]
+      omega
+    · have hka : (k == a) = false := by simpa using hk
+      simp only [List.lookup, hka] at h
+      have := ih h
+      simp only [List.filter_cons]
+      split <;> simp only [List.length_cons] <;> omega
 
 /-- How a core variable is held. -/
 inductive Kind where
@@ -82,24 +115,32 @@ inductive Rep where
   | flat (rs : List Rep)
   deriving Repr, Inhabited
 
-partial def Rep.vals : Rep → List Val
+/-- The core values of a representation. -/
+def Rep.vals : Rep → List Val
   | .atom x _ => [.var x]
   | .flat rs => rs.flatMap Rep.vals
 
-partial def Rep.binders : Rep → List Binder
+/-- The core binders of a representation. -/
+def Rep.binders : Rep → List Binder
   | .atom x k => [{ name := x, scalar := k == .scalar }]
   | .flat rs => rs.flatMap Rep.binders
 
 /-- Owned variables that are used later become borrowed. -/
-partial def Rep.demote (used : List String) : Rep → Rep
+def Rep.demote (used : List String) : Rep → Rep
   | .atom x .owned => if used.contains x then .atom x .borrowed else .atom x .owned
   | .atom x k => .atom x k
   | .flat rs => .flat (rs.map (Rep.demote used))
 
-partial def Rep.ownedNames : Rep → List String
+/-- The owned core variables of a representation. -/
+def Rep.ownedNames : Rep → List String
   | .atom x .owned => [x]
   | .atom _ _ => []
   | .flat rs => rs.flatMap Rep.ownedNames
+
+/-- The size of a representation (a measure for the pattern-matching matrix). -/
+def Rep.size : Rep → Nat
+  | .atom _ _ => 1
+  | .flat rs => (rs.map Rep.size).sum + 1
 
 /-- The compilation environment. -/
 structure Env where
@@ -108,6 +149,21 @@ structure Env where
   funs : List FunDecl
   vars : List (String × Ty × Rep) := []
   deriving Inhabited
+
+/-- Expand type aliases.  An alias is not expanded inside its own expansion, so a
+    recursive alias is left folded there. -/
+def normWith : List (String × Ty) → Ty → Ty
+  | as, .con n args =>
+    match _h : as.lookup n with
+    | some t => normWith (eraseKey as n) t
+    | none => .con n (args.map (normWith as))
+  | as, .fn ts r => .fn (ts.map (normWith as)) (normWith as r)
+  | as, .tuple ts => .tuple (ts.map (normWith as))
+termination_by as t => (as.length, sizeOf t)
+decreasing_by
+  all_goals simp_wf
+  · exact Prod.Lex.left _ _ (length_eraseKey_lt ‹_›)
+  all_goals (apply Prod.Lex.right; first | omega | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; omega))
 
 namespace Env
 
@@ -128,13 +184,7 @@ def demote (env : Env) (used : List String) : Env :=
   { env with vars := env.vars.map fun (x, t, r) => (x, t, r.demote used) }
 
 /-- Expand type aliases. -/
-partial def norm (env : Env) : Ty → Ty
-  | .con n args =>
-    match env.aliases.lookup n with
-    | some t => env.norm t
-    | none => .con n (args.map env.norm)
-  | .fn as r => .fn (as.map env.norm) (env.norm r)
-  | .tuple ts => .tuple (ts.map env.norm)
+def norm (env : Env) : Ty → Ty := normWith env.aliases
 
 /-- Is this a declaration of a value type (unboxed, single constructor)? -/
 def isValueDecl (d : TypeDecl) : Bool :=
@@ -151,10 +201,11 @@ def fieldTys (d : TypeDecl) (c : CtorDecl) (args : List Ty) : List Ty :=
 /-- The shape of a type. -/
 inductive Cls where
   | scalar | boxed | fn
-  | flat (comps : List Ty)
+  /-- an unboxed tuple, or a value type `name` -/
+  | flat (comps : List Ty) (name : Option String)
 
-def cls (env : Env) (t : Ty) : Cls :=
-  match env.norm t with
+/-- The shape of a type whose aliases are expanded. -/
+def clsNorm (env : Env) : Ty → Cls
   | .con n args =>
     if primTypes.contains n then .scalar
     else match env.findType n with
@@ -162,27 +213,48 @@ def cls (env : Env) (t : Ty) : Cls :=
         if isEnumDecl d then .scalar
         else if isValueDecl d then
           match d.ctors with
-          | [c] => .flat (fieldTys d c (args.map env.norm))
+          | [c] => .flat (fieldTys d c args) (some n)
           | _ => .boxed
         else .boxed
       | none => .boxed
-  | .tuple ts => .flat ts
+  | .tuple ts => .flat ts none
   | .fn _ _ => .fn
+
+/-- The shape of a type. -/
+def cls (env : Env) (t : Ty) : Cls := env.clsNorm (env.norm t)
+
+/-- The components of an unboxed type (`[]` for any other type). -/
+def comps (env : Env) (t : Ty) : List Ty :=
+  match env.cls t with
+  | .flat cs _ => cs
+  | _ => []
+
+/-- The kind of a variable of type `t`: scalar, or the given kind `mode`. -/
+def kindOf (env : Env) (t : Ty) (mode : Kind) : Kind :=
+  match env.cls t with
+  | .scalar => .scalar
+  | _ => mode
 
 end Env
 
 /-! ## Type inference (just enough to know how variables are represented) -/
 
+mutual
 /-- One-way matching of a declared field type against an inferred argument type. -/
-partial def matchTy (params : List String) : Ty → Ty → List (String × Ty) → List (String × Ty)
+def matchTy (params : List String) : Ty → Ty → List (String × Ty) → List (String × Ty)
   | .con p [], t, σ => if params.contains p && !(t == unk) && (σ.lookup p).isNone then (p, t) :: σ else σ
-  | .con _ as, .con _ bs, σ => (as.zip bs).foldl (fun σ (a, b) => matchTy params a b σ) σ
-  | .tuple as, .tuple bs, σ => (as.zip bs).foldl (fun σ (a, b) => matchTy params a b σ) σ
+  | .con _ as, .con _ bs, σ => matchTys params as bs σ
+  | .tuple as, .tuple bs, σ => matchTys params as bs σ
   | _, _, σ => σ
+/-- `matchTy`, componentwise. -/
+def matchTys (params : List String) : List Ty → List Ty → List (String × Ty) → List (String × Ty)
+  | a :: as, b :: bs, σ => matchTys params as bs (matchTy params a b σ)
+  | _, _, σ => σ
+end
 
 mutual
 /-- The (approximate) type of an expression. -/
-partial def inferTy (env : Env) : Expr → Ty
+def inferTy (env : Env) : Expr → Ty
   | .var x =>
     match env.lookupVar x with
     | some (t, _) => t
@@ -193,8 +265,7 @@ partial def inferTy (env : Env) : Expr → Ty
   | .app f args =>
     match env.findCtor f with
     | some (d, c) =>
-      let σ := (c.fields.zip args).foldl
-        (fun σ ((_, ft), a) => matchTy d.params ft (env.norm (inferTy env a)) σ) []
+      let σ := inferArgTys env d.params c.fields args []
       .con d.name (d.params.map fun p => (σ.lookup p).getD unk)
     | none =>
       match env.lookupVar f with
@@ -204,41 +275,91 @@ partial def inferTy (env : Env) : Expr → Ty
       | none => match env.findFun f with
         | some fd => fd.ret.getD unk
         | none => unk
-  | .tuple es => .tuple (es.map (inferTy env))
+  | .tuple es => .tuple (inferTys env es)
   | .binop _ _ _ => .con "bool" []
   | .ite _ t e =>
     let a := inferTy env t
     if a == unk then inferTy env e else a
   | .match _ _ cls => inferClauses env cls
   | .valIn _ _ e2 => inferTy env e2
-partial def inferClauses (env : Env) : List Clause → Ty
+/-- The types of a list of expressions. -/
+def inferTys (env : Env) : List Expr → List Ty
+  | [] => []
+  | e :: es => inferTy env e :: inferTys env es
+/-- Instantiate the type parameters `params` of a constructor with fields `fields` from
+    the types of its arguments. -/
+def inferArgTys (env : Env) (params : List String) :
+    List (String × Ty) → List Expr → List (String × Ty) → List (String × Ty)
+  | (_, ft) :: fs, a :: as, σ =>
+    inferArgTys env params fs as (matchTy params ft (env.norm (inferTy env a)) σ)
+  | _, _, σ => σ
+/-- The type of the first clause whose type is known. -/
+def inferClauses (env : Env) : List Clause → Ty
   | [] => unk
   | .mk _ _ b :: cs =>
     let a := inferTy env b
     if a == unk then inferClauses env cs else a
 end
 
-/-! ## Surface free variables -/
+/-! ## Surface free variables and sizes -/
 
-partial def Pat.binds (x : String) : Pat → Bool
+def Pat.binds (x : String) : Pat → Bool
   | .var y => x == y
   | .wild => false
-  | .ctor _ ps => ps.any (Pat.binds x)
-  | .tuple ps => ps.any (Pat.binds x)
+  | .ctor _ ps => ps.attach.any fun ⟨p, _⟩ => Pat.binds x p
+  | .tuple ps => ps.attach.any fun ⟨p, _⟩ => Pat.binds x p
 
 mutual
-partial def Expr.mentions (x : String) : Expr → Bool
+def Expr.mentions (x : String) : Expr → Bool
   | .var y => x == y
   | .lit _ => false
-  | .app f args => f == x || args.any (Expr.mentions x)
-  | .tuple es => es.any (Expr.mentions x)
+  | .app f args => f == x || Expr.mentionsList x args
+  | .tuple es => Expr.mentionsList x es
   | .binop _ a b => a.mentions x || b.mentions x
   | .ite c t e => c.mentions x || t.mentions x || e.mentions x
-  | .match _ s cls => s.mentions x || cls.any (Clause.mentions x)
+  | .match _ s cls => s.mentions x || Clause.mentionsList x cls
   | .valIn p e1 e2 => e1.mentions x || (!p.binds x && e2.mentions x)
-partial def Clause.mentions (x : String) : Clause → Bool
-  | .mk p g b => !p.binds x && (g.any (Expr.mentions x) || b.mentions x)
+def Expr.mentionsList (x : String) : List Expr → Bool
+  | [] => false
+  | e :: es => e.mentions x || Expr.mentionsList x es
+def Expr.mentionsOpt (x : String) : Option Expr → Bool
+  | none => false
+  | some e => e.mentions x
+def Clause.mentions (x : String) : Clause → Bool
+  | .mk p g b => !p.binds x && (Expr.mentionsOpt x g || b.mentions x)
+def Clause.mentionsList (x : String) : List Clause → Bool
+  | [] => false
+  | c :: cs => c.mentions x || Clause.mentionsList x cs
 end
+
+mutual
+/-- The size of an expression: the measure on which the compiler recurses. -/
+def Expr.size : Expr → Nat
+  | .var _ | .lit _ => 1
+  | .app _ args => Expr.sizeList args + 1
+  | .tuple es => Expr.sizeList es + 1
+  | .binop _ a b => a.size + b.size + 3
+  | .ite c t e => c.size + t.size + e.size + 1
+  | .match _ s cls => s.size + Clause.sizeList cls + 2
+  | .valIn _ e1 e2 => e1.size + e2.size + 3
+def Expr.sizeList : List Expr → Nat
+  | [] => 0
+  | e :: es => e.size + Expr.sizeList es + 1
+def Expr.sizeOpt : Option Expr → Nat
+  | none => 0
+  | some e => e.size
+def Clause.size : Clause → Nat
+  | .mk _ g b => b.size + Expr.sizeOpt g + 1
+def Clause.sizeList : List Clause → Nat
+  | [] => 0
+  | c :: cs => c.size + Clause.sizeList cs
+end
+
+/-- The size of a pattern: the number of constructor and tuple patterns in it. -/
+def Pat.size : Pat → Nat
+  | .var _ | .wild => 0
+  | .ctor _ ps => (ps.map Pat.size).sum + 1
+  | .tuple ps => (ps.map Pat.size).sum + 1
 
 /-! ## The compiler -/
 
@@ -257,12 +378,35 @@ def fresh (hint : String) : CM String := do
 def recordTy (x : String) (t : Ty) : CM Unit :=
   modify fun s => { s with tys := (x, t) :: s.tys }
 
+/-- A fresh core variable of type `t`, a scalar or of kind `mode`. -/
+def freshAtom (env : Env) (hint : String) (t : Ty) (mode : Kind) : CM Rep := do
+  let x ← fresh hint
+  recordTy x t
+  return .atom x (env.kindOf t mode)
+
+/-- A fresh representation for a value of the type `t` (whose aliases are expanded);
+    boxed components get kind `mode`.  `visited` are the value types being unboxed: a
+    recursive value type is an error. -/
+def freshRepN (env : Env) (hint : String) (mode : Kind) (visited : List String) (t : Ty) :
+    CM Rep := do
+  match t with
+  | .tuple ts => return .flat (← ts.attach.mapM fun ⟨c, _⟩ => freshRepN env hint mode visited c)
+  | _ =>
+    match env.clsNorm t with
+    | .flat comps (some n) =>
+      if visited.length < env.types.length ∧ n ∉ visited then
+        return .flat (← comps.mapM fun c => freshRepN env hint mode (n :: visited) (env.norm c))
+      else throw s!"recursive value type '{n}'"
+    | _ => freshAtom env hint t mode
+termination_by (env.types.length - visited.length, sizeOf t)
+decreasing_by
+  all_goals simp_wf
+  · apply Prod.Lex.right; have := List.sizeOf_lt_of_mem ‹_ ∈ _›; omega
+  · apply Prod.Lex.left; have := (‹_ ∧ _›).1; omega
+
 /-- A fresh representation for a value of type `t`; boxed components get kind `mode`. -/
-partial def freshRep (env : Env) (hint : String) (t : Ty) (mode : Kind) : CM Rep := do
-  match env.cls t with
-  | .flat comps => return .flat (← comps.mapM fun c => freshRep env hint c mode)
-  | .scalar => let x ← fresh hint; recordTy x t; return .atom x .scalar
-  | _ => let x ← fresh hint; recordTy x t; return .atom x mode
+def freshRep (env : Env) (hint : String) (t : Ty) (mode : Kind) : CM Rep :=
+  freshRepN env hint mode [] (env.norm t)
 
 def primOp : BinOp → FIP.PrimOp
   | .lt => .lt | .le => .le | .gt => .gt | .ge => .ge | .eq => .eq | .ne => .ne
@@ -280,11 +424,34 @@ structure Row where
   body : Expr
   deriving Inhabited
 
+/-- The size of the code of a row. -/
+def Row.size (r : Row) : Nat := r.body.size + Expr.sizeOpt r.guard + 1
+
+/-- The rows of the clauses of a match. -/
+def rowsOf (cls : List Clause) : List Row :=
+  cls.map fun (.mk p g b) => { pats := [p], binds := [], guard := g, body := b }
+
+theorem rowsOf_size (cls : List Clause) :
+    ((rowsOf cls).map Row.size).sum = Clause.sizeList cls := by
+  induction cls with
+  | nil => rfl
+  | cons c cs ih =>
+    cases c
+    simp only [rowsOf, List.map_cons, List.sum_cons, Clause.sizeList, Clause.size,
+      Row.size] at ih ⊢
+    omega
+
 /-- A column of the matrix: the core representation of the value matched, and its type. -/
 structure Occ where
   rep : Rep
   ty : Ty
   deriving Inhabited
+
+/-- The measure of a matrix: the size of its code, of its patterns and of its columns, and
+    its number of rows. -/
+def matrixMeasure (occs : List Occ) (rows : List Row) : Nat × Nat × Nat × Nat :=
+  ((rows.map Row.size).sum, (rows.map fun r => (r.pats.map Pat.size).sum).sum,
+   (occs.map (·.rep.size)).sum, rows.length)
 
 def isRefutable : Pat → Bool
   | .ctor _ _ => true
@@ -299,17 +466,63 @@ def Rep.isFlat : Rep → Bool
 abbrev DMap := List (String × String × List Rep)
 
 /-- The value of an occurrence, rebuilding destructed cells. -/
-partial def recon (dm : DMap) : Rep → List Val
+def recon (dm : DMap) : Rep → List Val
   | .atom x _ =>
-    match dm.lookup x with
-    | some (c, subs) => [.ctor c (subs.flatMap (recon dm))]
+    match _h : dm.lookup x with
+    | some (c, subs) => [.ctor c (subs.flatMap (recon (eraseKey dm x)))]
     | none => [.var x]
   | .flat rs => rs.flatMap (recon dm)
+termination_by r => (dm.length, sizeOf r)
+decreasing_by
+  all_goals simp_wf
+  · exact Prod.Lex.left _ _ (length_eraseKey_lt ‹_›)
+  · apply Prod.Lex.right; have := List.sizeOf_lt_of_mem ‹_ ∈ _›; omega
+
+/-- Is this expression compiled by binding it to fresh variables (rather than to values
+    directly)? -/
+def valTag (env : Env) : Expr → Nat
+  | .var _ | .lit _ | .tuple _ => 0
+  | .app c _ => if (env.findCtor c).isSome then 0 else 3
+  | _ => 3
+
+theorem lex_of_matrix {a b : Nat × Nat × Nat × Nat} {t : Nat}
+    (h : Prod.Lex (· < ·) (Prod.Lex (· < ·) (Prod.Lex (· < ·) (· < ·))) a b) :
+    Prod.Lex (· < ·) (Prod.Lex (· < ·) (Prod.Lex (· < ·) (Prod.Lex (· < ·) (· < ·))))
+      (a.1, t, a.2) (b.1, t, b.2) := by
+  obtain ⟨a1, a2⟩ := a
+  obtain ⟨b1, b2⟩ := b
+  cases h with
+  | left _ _ h => exact Prod.Lex.left _ _ h
+  | right _ h => exact Prod.Lex.right _ (Prod.Lex.right _ h)
+
+theorem valTag_le (env : Env) (e : Expr) : valTag env e ≤ 3 := by
+  unfold valTag; split <;> (try split) <;> omega
+
+/-- Discharge the termination goals of the compiler. -/
+macro "compile_decreasing" : tactic =>
+  `(tactic| all_goals (simp_wf <;> first
+      | (apply Prod.Lex.left
+         (try simp only [Expr.size, Expr.sizeList, Expr.sizeOpt, rowsOf_size,
+           List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at *)
+         omega)
+      | (apply lex_lt_of_le (Nat.le_refl _)
+         apply Prod.Lex.left
+         (try simp only [valTag, *, Option.isSome_some, Option.isSome_none, if_true, if_false,
+           Bool.false_eq_true])
+         omega)
+      | (apply lex_lt_of_le (Nat.le_refl _)
+         apply Prod.Lex.left
+         exact Nat.lt_of_le_of_lt (valTag_le _ _) (by decide))
+      | (apply lex_lt_of_le
+         · (try simp only [Expr.size, Expr.sizeList, Expr.sizeOpt, Row.size,
+             List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at *)
+           omega
+         · exact Prod.Lex.left _ _ (by decide))))
 
 mutual
 
 /-- Compile an expression to values, passing them to the continuation `k`. -/
-partial def compileVal (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM IR.Expr := do
+def compileVal (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM IR.Expr :=
   match e with
   | .var x =>
     match env.lookupVar x with
@@ -318,8 +531,8 @@ partial def compileVal (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM
       if (env.findFun x).isSome then k [.fn x] else throw s!"unknown variable '{x}'"
   | .lit n => k [.lit n]
   | .app c args =>
-    match env.findCtor c with
-    | some (d, cd) =>
+    match _h : env.findCtor c with
+    | some (d, cd) => do
       unless cd.fields.length == args.length || args.isEmpty && cd.fields.isEmpty do
         throw s!"constructor '{c}' expects {cd.fields.length} arguments"
       compileArgs env args fun vss => do
@@ -329,34 +542,45 @@ partial def compileVal (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM
             | [v] => pure v
             | _ => throw s!"constructor '{c}': an unboxed value cannot be a field"
           k [.ctor c vs]
-    | none => bindTo env e k
+    | none => bindTo env (.app c args) k
   | .tuple es => compileArgs env es fun vss => k vss.flatten
-  | _ => bindTo env e k
+  | .binop op a b => bindTo env (.binop op a b) k
+  | .ite c t f => bindTo env (.ite c t f) k
+  | .match d s cls => bindTo env (.match d s cls) k
+  | .valIn p e1 e2 => bindTo env (.valIn p e1 e2) k
+termination_by (e.size, valTag env e, 0, 0, 0)
+decreasing_by compile_decreasing
 
 /-- Compile a list of arguments from left to right. -/
-partial def compileArgs (env : Env) : List Expr → (List (List Val) → CM IR.Expr) → CM IR.Expr
-  | [], k => k []
-  | e :: es, k => compileVal env e fun vs => compileArgs env es fun vss => k (vs :: vss)
+def compileArgs (env : Env) (es : List Expr) (k : List (List Val) → CM IR.Expr) :
+    CM IR.Expr :=
+  match es with
+  | [] => k []
+  | e :: es => compileVal env e fun vs => compileArgs env es fun vss => k (vs :: vss)
+termination_by (Expr.sizeList es, 0, 0, 0, 0)
+decreasing_by compile_decreasing
 
 /-- `let x̄ = e in k x̄`: variables used in the continuation are borrowed in `e`. -/
-partial def bindTo (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM IR.Expr := do
+def bindTo (env : Env) (e : Expr) (k : List Val → CM IR.Expr) : CM IR.Expr := do
   let ty := inferTy env e
   let r ← freshRep env (hintOf e) ty .owned
   let body ← k r.vals
   let e1 ← compileTail (env.demote body.fv) e
   return .letIn r.binders e1 body
+termination_by (e.size, 2, 0, 0, 0)
+decreasing_by compile_decreasing
 
 /-- Compile an expression in tail position. -/
-partial def compileTail (env : Env) (e : Expr) : CM IR.Expr := do
+def compileTail (env : Env) (e : Expr) : CM IR.Expr :=
   match e with
   | .app f args =>
-    if (env.findCtor f).isSome then compileVal env e fun vs => pure (.ret vs)
+    if (env.findCtor f).isSome then compileVal env (.app f args) fun vs => pure (.ret vs)
     else match env.lookupVar f with
       | some (_, .atom x _) =>
         compileArgs env args fun vss => pure (.app (.var x) (.ret vss.flatten))
       | some _ => throw s!"'{f}' is not a function"
       | none => match env.findFun f with
-        | some fd =>
+        | some fd => do
           unless fd.params.length == args.length do
             throw s!"function '{f}' expects {fd.params.length} arguments"
           compileArgs env args fun vss => do
@@ -365,32 +589,41 @@ partial def compileTail (env : Env) (e : Expr) : CM IR.Expr := do
             let o := (pairs.filter (!·.1.borrowed)).flatMap (·.2)
             pure (.call f (.ret b) (.ret o))
         | none => throw s!"unknown function '{f}'"
-  | .binop .and a b => compileTail env (.ite a b (.app "False" []))
-  | .binop .or a b => compileTail env (.ite a (.app "True" []) b)
+  | .binop .and a b => compileCond env a (compileTail env b) (pure (.ret [.ctor "False" []]))
+  | .binop .or a b => compileCond env a (pure (.ret [.ctor "True" []])) (compileTail env b)
   | .binop op a b =>
     compileArgs env [a, b] fun vss => match vss with
       | [[va], [vb]] => pure (.prim (primOp op) [va, vb])
       | _ => throw "a comparison expects scalar arguments"
   | .ite c t f =>
     compileCond env c (compileTail env t) (compileTail env f)
-  | .match _ scrut cls =>
-    let rows := cls.map fun (.mk p g b) => { pats := [p], binds := [], guard := g, body := b }
-    let ty := inferTy env scrut
-    match scrut with
-    | .var x =>
-      match env.lookupVar x with
-      | some (t, r) => compileMatch env [] [⟨r, t⟩] rows
-      | none => throw s!"unknown variable '{x}'"
-    | _ =>
-      let r ← freshRep env (hintOf scrut) ty .owned
-      let body ← compileMatch env [] [⟨r, ty⟩] rows
-      let e1 ← compileTail (env.demote body.fv) scrut
-      return .letIn r.binders e1 body
-  | .valIn p e1 e2 => compileTail env (.match false e1 [.mk p none e2])
-  | _ => compileVal env e fun vs => pure (.ret vs)
+  | .match _ scrut cls => compileMatchOn env scrut (rowsOf cls)
+  | .valIn p e1 e2 =>
+    compileMatchOn env e1 [{ pats := [p], binds := [], guard := none, body := e2 }]
+  | .var x => compileVal env (.var x) fun vs => pure (.ret vs)
+  | .lit n => compileVal env (.lit n) fun vs => pure (.ret vs)
+  | .tuple es => compileVal env (.tuple es) fun vs => pure (.ret vs)
+termination_by (e.size, 1, 0, 0, 0)
+decreasing_by compile_decreasing
+
+/-- Compile a match of `scrut` against the rows `rows`. -/
+def compileMatchOn (env : Env) (scrut : Expr) (rows : List Row) : CM IR.Expr :=
+  match scrut with
+  | .var x =>
+    match env.lookupVar x with
+    | some (t, r) => compileMatch env [] [⟨r, t⟩] rows
+    | none => throw s!"unknown variable '{x}'"
+  | s => do
+    let ty := inferTy env s
+    let r ← freshRep env (hintOf s) ty .owned
+    let body ← compileMatch env [] [⟨r, ty⟩] rows
+    let e1 ← compileTail (env.demote body.fv) s
+    return .letIn r.binders e1 body
+termination_by (scrut.size + (rows.map Row.size).sum + 1, 0, 0, 0, 0)
+decreasing_by compile_decreasing
 
 /-- `if c then t else f`, with the branches given as core computations. -/
-partial def compileCond (env : Env) (c : Expr) (t f : CM IR.Expr) : CM IR.Expr :=
+def compileCond (env : Env) (c : Expr) (t f : CM IR.Expr) : CM IR.Expr :=
   compileVal env c fun vs => match vs with
     | [.ctor "True" []] => t
     | [.ctor "False" []] => f
@@ -399,9 +632,11 @@ partial def compileCond (env : Env) (c : Expr) (t f : CM IR.Expr) : CM IR.Expr :
       let f' ← f
       pure (.bmatch (.var x) [.mk "True" [] t', .mk "False" [] f'])
     | _ => throw "a condition must be a boolean"
+termination_by (c.size, 4, 0, 0, 0)
+decreasing_by compile_decreasing
 
 /-- The pattern-matching matrix. -/
-partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List Row) :
+def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List Row) :
     CM IR.Expr := do
   -- unboxed columns are expanded into their components
   match occs.findIdx? (·.rep.isFlat) with
@@ -409,7 +644,7 @@ partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List 
     let occ := occs[i]!
     let rs := match occ.rep with | .flat rs => rs | _ => []
     let tys : List Ty := match env.cls occ.ty with
-      | .flat ts => ts
+      | .flat ts _ => ts
       | _ => List.replicate rs.length unk
     let subs : List Occ := (rs.zip (tys ++ List.replicate rs.length unk)).map fun (r, t) => ⟨r, t⟩
     let rows' ← rows.mapM fun row => do
@@ -424,7 +659,11 @@ partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List 
         | .var x => (x, occ.ty, occ.rep) :: row.binds
         | _ => row.binds
       pure { row with pats := row.pats.take i ++ ps ++ row.pats.drop (i + 1), binds }
-    compileMatch env dm (occs.take i ++ subs ++ occs.drop (i + 1)) rows'
+    let occs' := occs.take i ++ subs ++ occs.drop (i + 1)
+    if Prod.Lex (· < ·) (Prod.Lex (· < ·) (Prod.Lex (· < ·) (· < ·)))
+        (matrixMeasure occs' rows') (matrixMeasure occs rows) then
+      compileMatch env dm occs' rows'
+    else noProgress "compiler"
   | none =>
   match rows with
   | [] => throw "non-exhaustive match"
@@ -437,6 +676,7 @@ partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List 
         | _ => none
       compileRow env dm binds row.guard row.body (compileMatch env dm occs rest)
     | some i =>
+      let rows := row :: rest
       let occ := occs[i]!
       let cname := match row.pats[i]! with | .ctor c _ => c | _ => ""
       let some (d, _) := env.findCtor cname | throw s!"unknown constructor '{cname}'"
@@ -455,10 +695,7 @@ partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List 
       let fmode := if destr then Kind.owned else Kind.borrowed
       let brs ← needed.mapM fun cd => do
         let ftys := Env.fieldTys d cd args
-        let subs ← (cd.fields.zip ftys).mapM fun ((fname, _), ft) => do
-          match env.cls ft with
-          | .scalar => let y ← fresh fname; recordTy y ft; pure (Rep.atom y .scalar)
-          | _ => let y ← fresh fname; recordTy y ft; pure (Rep.atom y fmode)
+        let subs ← (cd.fields.zip ftys).mapM fun ((fname, _), ft) => freshAtom env fname ft fmode
         let k := cd.fields.length
         let rows' ← rows.filterMapM fun r => do
           let p := r.pats[i]!
@@ -475,14 +712,28 @@ partial def compileMatch (env : Env) (dm : DMap) (occs : List Occ) (rows : List 
           | _ => pure (some { r with pats := spec (List.replicate k .wild) })
         let dm' := if destr then (x, cd.name, subs) :: dm else dm
         let subOccs := (subs.zip ftys).map fun (r, t) => (⟨r, t⟩ : Occ)
-        let body ← compileMatch env dm' (occs.take i ++ subOccs ++ occs.drop (i + 1)) rows'
-        pure (Branch.mk cd.name (subs.flatMap Rep.binders) body)
+        let occs' := occs.take i ++ subOccs ++ occs.drop (i + 1)
+        if Prod.Lex (· < ·) (Prod.Lex (· < ·) (Prod.Lex (· < ·) (· < ·)))
+            (matrixMeasure occs' rows') (matrixMeasure occs (row :: rest)) then
+          let body ← compileMatch env dm' occs' rows'
+          pure (Branch.mk cd.name (subs.flatMap Rep.binders) body)
+        else noProgress "compiler"
       if destr then return .dmatch (.var x) brs
       else return .bmatch (.var x) brs
+termination_by ((rows.map Row.size).sum, 6, (matrixMeasure occs rows).2)
+decreasing_by
+  · exact lex_of_matrix ‹_›
+  · simp_wf
+    apply Prod.Lex.left
+    simp only [Row.size]; omega
+  · simp_wf
+    apply lex_lt_of_le _ (Prod.Lex.left _ _ (by decide : 5 < 6))
+    simp only [Row.size]; omega
+  · exact lex_of_matrix ‹_›
 
 /-- The body of a matched row: bind its variables (rebuilding destructed values), check
     the guard, and fall back to the remaining rows if it fails. -/
-partial def compileRow (env : Env) (dm : DMap) (binds : List (String × Ty × Rep))
+def compileRow (env : Env) (dm : DMap) (binds : List (String × Ty × Rep))
     (guard : Option Expr) (body : Expr) (fallback : CM IR.Expr) : CM IR.Expr := do
   -- aliases are bound directly; destructed values are rebuilt after the guard
   let mut envG := env
@@ -505,6 +756,8 @@ partial def compileRow (env : Env) (dm : DMap) (binds : List (String × Ty × Re
   match guard with
   | none => tbody
   | some g => compileCond envG' g tbody fallback
+termination_by (body.size + Expr.sizeOpt guard + 1, 5, 0, 0, 0)
+decreasing_by compile_decreasing
 
 end
 
@@ -514,62 +767,83 @@ end
 def ownedBinders (xs : List Binder) : List String :=
   (xs.filter (!·.scalar)).map (·.name)
 
-/-- Consume the unused owned variables: in a `fip` function destruct them (if their type
-    has a single constructor), in a `fbip` function `drop` them. -/
-partial def consume (env : Env) (fbip : Bool) (owned : List String) (e : IR.Expr) :
-    CM IR.Expr := do
+mutual
+/-- Consume the unused owned variables `owned` of `e`: in a `fip` function destruct them
+    (if their type has a single constructor), in a `fbip` function `drop` them.
+    `visited` are the types being destructed: a field of a type that is being destructed
+    is not destructed again. -/
+def consume (env : Env) (fbip : Bool) (visited : List String) (owned : List String)
+    (e : IR.Expr) : CM IR.Expr := do
   let fv := e.fv
   let used := owned.filter fun x => fv.contains x
   let unused := owned.filter fun x => !fv.contains x
-  let e' ← go used e
-  unused.foldlM (fun acc u => wrap u acc) e'
-where
-  go (used : List String) (e : IR.Expr) : CM IR.Expr := do
-    match e with
-    | .letIn xs e1 e2 =>
-      let f1 := e1.fv
-      let f2 := e2.fv
-      let o1 := used.filter fun x => f1.contains x && !f2.contains x
-      let o2 := used.filter (!o1.contains ·) ++ ownedBinders xs
-      return .letIn xs (← consume env fbip o1 e1) (← consume env fbip o2 e2)
-    | .dmatch (.var x) bs =>
-      let bs' ← bs.mapM fun (.mk c xs b) => do
-        return Branch.mk c xs (← consume env fbip (used.erase x ++ ownedBinders xs) b)
-      return .dmatch (.var x) bs'
-    | .bmatch s bs =>
-      let bs' ← bs.mapM fun (.mk c xs b) => do
-        return Branch.mk c xs (← consume env fbip used b)
-      return .bmatch s bs'
-    | .drop v b => return .drop v (← go used b)
-    | .free k b => return .free k (← go used b)
-    | _ => return e
-  wrap (u : String) (acc : IR.Expr) : CM IR.Expr := do
-    if fbip then return .drop (.var u) acc
-    let t := ((← get).tys.lookup u).getD unk
-    match env.norm t with
-    | .con n args =>
-      match env.findType n with
-      | some d =>
-        match d.ctors with
-        | [cd] =>
-          if cd.fields.isEmpty then return acc
+  let e' ← consumeIn env fbip visited used e
+  unused.foldlM (fun acc u => consumeVar env fbip visited u acc) e'
+termination_by (env.types.length - visited.length, sizeOf e + 1, 2)
+
+/-- Push the consumption of the variables `used` into `e`. -/
+def consumeIn (env : Env) (fbip : Bool) (visited : List String) (used : List String)
+    (e : IR.Expr) : CM IR.Expr := do
+  match e with
+  | .letIn xs e1 e2 =>
+    let f1 := e1.fv
+    let f2 := e2.fv
+    let o1 := used.filter fun x => f1.contains x && !f2.contains x
+    let o2 := used.filter (!o1.contains ·) ++ ownedBinders xs
+    return .letIn xs (← consume env fbip visited o1 e1) (← consume env fbip visited o2 e2)
+  | .dmatch (.var x) bs =>
+    let bs' ← bs.attach.mapM fun ⟨.mk c xs b, _⟩ => do
+      return Branch.mk c xs (← consume env fbip visited (used.erase x ++ ownedBinders xs) b)
+    return .dmatch (.var x) bs'
+  | .bmatch s bs =>
+    let bs' ← bs.attach.mapM fun ⟨.mk c xs b, _⟩ => do
+      return Branch.mk c xs (← consume env fbip visited used b)
+    return .bmatch s bs'
+  | .drop v b => return .drop v (← consumeIn env fbip visited used b)
+  | .free k b => return .free k (← consumeIn env fbip visited used b)
+  | _ => return e
+termination_by (env.types.length - visited.length, sizeOf e + 1, 1)
+decreasing_by
+  all_goals simp_wf
+  all_goals (apply Prod.Lex.right; apply Prod.Lex.left)
+  all_goals first
+    | omega
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; simp only [IR.Branch.mk.sizeOf_spec] at this; omega)
+
+/-- Consume the unused owned variable `u` around `acc`. -/
+def consumeVar (env : Env) (fbip : Bool) (visited : List String) (u : String)
+    (acc : IR.Expr) : CM IR.Expr := do
+  if fbip then return .drop (.var u) acc
+  let t := ((← get).tys.lookup u).getD unk
+  match env.norm t with
+  | .con n args =>
+    match env.findType n with
+    | some d =>
+      match d.ctors with
+      | [cd] =>
+        if cd.fields.isEmpty then return acc
+        if visited.length < env.types.length ∧ n ∉ visited then
           let ftys := Env.fieldTys d cd args
-          let subs ← (cd.fields.zip ftys).mapM fun ((fname, _), ft) => do
-            let y ← fresh fname
-            recordTy y ft
-            match env.cls ft with
-            | .scalar => pure (Binder.mk y true)
-            | _ => pure (Binder.mk y false)
-          let body ← consume env fbip (ownedBinders subs) acc
+          let subs ← (cd.fields.zip ftys).flatMapM fun ((fname, _), ft) => do
+            return (← freshAtom env fname ft .owned).binders
+          let body ← consume env fbip (n :: visited) (ownedBinders subs) acc
           return .dmatch (.var u) [.mk cd.name subs body]
-        | _ => return acc
-      | none => return acc
-    | _ => return acc
+        else return acc
+      | _ => return acc
+    | none => return acc
+  | _ => return acc
+termination_by (env.types.length - visited.length, 0, 0)
+decreasing_by
+  all_goals simp_wf
+  apply Prod.Lex.left; have := (‹_ ∧ _›).1; omega
+end
 
 /-! ## Functions and programs -/
 
-/-- A compiled Koka module: its type declarations and the core signature. -/
-structure Module where
+/-- The raw output of the compiler: the type declarations and the core signature of a
+    Koka program.  `Koka.Module` (in `RequestProject/Frontend/Module.lean`) adds the names of
+    its functions and constructors as indices, with the proofs that tie them together. -/
+structure RawModule where
   types : List TypeDecl
   sig : FIP.Sig
   deriving Inhabited
@@ -579,13 +853,10 @@ def paramRep (env : Env) (p : Param) : Rep :=
   let t := p.ty.getD unk
   let mode := if p.borrowed then Kind.borrowed else Kind.owned
   match env.cls t with
-  | .scalar => .atom p.name .scalar
-  | .flat comps =>
+  | .flat comps _ =>
     .flat ((List.range comps.length).zip comps |>.map fun (i, c) =>
-      match env.cls c with
-      | .scalar => .atom s!"{p.name}#{i}" .scalar
-      | _ => .atom s!"{p.name}#{i}" mode)
-  | _ => .atom p.name mode
+      .atom s!"{p.name}#{i}" (env.kindOf c mode))
+  | _ => .atom p.name (env.kindOf t mode)
 
 /-- Compile a function declaration. -/
 def compileFun (env : Env) (fd : FunDecl) : Except String FIP.FunDef := do
@@ -594,8 +865,7 @@ def compileFun (env : Env) (fd : FunDecl) : Except String FIP.FunDef := do
   let tys := reps.flatMap fun (p, r) => match r with
     | .atom x _ => [(x, p.ty.getD unk)]
     | .flat rs =>
-      let comps := match env.cls (p.ty.getD unk) with | .flat cs => cs | _ => []
-      (rs.zip comps).filterMap fun (r, c) => match r with
+      (rs.zip (env.comps (p.ty.getD unk))).filterMap fun (r, c) => match r with
         | .atom x _ => some (x, c)
         | _ => none
   let prog : CM IR.Expr := do
@@ -604,7 +874,7 @@ def compileFun (env : Env) (fd : FunDecl) : Except String FIP.FunDef := do
     | .plain => return body
     | a =>
       let owned := (reps.filter (!·.1.borrowed)).flatMap (·.2.ownedNames)
-      consume env (match a with | .fbip _ => true | _ => false) owned body
+      consume env (match a with | .fbip _ => true | _ => false) [] owned body
   match prog.run { tys } with
   | .ok (body, _) =>
     match IR.resolveFun fd.name ((reps.filter (·.1.borrowed)).flatMap (·.2.binders))
@@ -614,7 +884,7 @@ def compileFun (env : Env) (fd : FunDecl) : Except String FIP.FunDef := do
   | .error msg => throw s!"in function '{fd.name}': {msg}"
 
 /-- Compile a whole program. -/
-def compileProgram (p : Program) : Except String Module := do
+def compileProgram (p : Program) : Except String RawModule := do
   let types := p.filterMap fun d => match d with | .type t => some t | _ => none
   let aliases := p.filterMap fun d => match d with | .alias x t => some (x, t) | _ => none
   let funs := p.filterMap fun d => match d with | .fn f => some f | _ => none
@@ -623,7 +893,7 @@ def compileProgram (p : Program) : Except String Module := do
   return { types, sig }
 
 /-- Parse and compile Koka source code. -/
-def compileSource (src : String) : Except String Module := do
+def compileSource (src : String) : Except String RawModule := do
   compileProgram (← parseProgram src)
 
 end Koka

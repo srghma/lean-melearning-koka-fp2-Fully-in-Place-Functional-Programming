@@ -25,10 +25,10 @@ The *heap* extends a store with reference counts `n ≥ 1` and closures:
 This file formalizes the functional semantics, the typing rules of Fig. 9, the heap
 semantics of Fig. 10 and the join `H₁ ⊗ H₂` of heaps (Appendix E.1).  The functional and
 the heap semantics run closed expressions `LExpr 0`; the heap binds locations only (the only
-variables of scope `0`).  The paper's formal statement of **Theorem 6** is kept in a comment
-at the end of this file; the hypotheses it lacks are discussed in
-`RequestProject/AppE_HeapSoundness/HeapAdmCex.lean`, and the corrected statement is proved
-as `heap_sound_corrected` in `RequestProject/AppE_HeapSoundness/HeapTheorem.lean`.  We also
+variables of scope `0`).  **Theorem 6** is proved in
+`RequestProject/AppE_HeapSoundness/HeapSound.lean` (`heap_sound`);
+`RequestProject/AppE_HeapSoundness/HeapCex.lean` shows that, as stated, it needs two extra
+hypotheses (`heap_sound_needs_adm`, `heap_sound_needs_no_fn`).  We also
 prove that the translation of a destructive match into `λfip` is well-formed
 (`LWf.dmatch_translation`, Section 5).
 -/

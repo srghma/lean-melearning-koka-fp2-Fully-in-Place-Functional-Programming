@@ -231,30 +231,6 @@ theorem Owned.mem_roots {m : Nat} {ρ : Fin m → Val 0} {Γ : Ctx m} {S : Store
   rw [← h.roots, Ctx.nz, Multiset.mem_filter]
   exact ⟨Multiset.mem_map.mpr ⟨_, hx, Res.substR_var hl⟩, by simp⟩
 
-theorem Sig.lookup_mem {g : FName} {fd : FunDef} (h : sig.lookup g = some fd) :
-    fd ∈ sig ∧ fd.name = g := by
-  unfold Sig.lookup at h
-  exact ⟨List.mem_of_find?_eq_some h, by simpa using List.find?_some h⟩
-
-theorem Sig.lookup_of_mem (hn : (sig.map (·.name)).Nodup) {fd : FunDef} (h : fd ∈ sig) :
-    sig.lookup fd.name = some fd := by
-  induction sig with
-  | nil => simp at h
-  | cons fd' sig ih =>
-    simp only [List.map_cons, List.nodup_cons] at hn
-    unfold Sig.lookup at ih ⊢
-    rw [List.find?_cons]
-    by_cases heq : fd'.name = fd.name
-    · simp only [heq, beq_self_eq_true]
-      rcases List.mem_cons.mp h with rfl | h
-      · rfl
-      · exact absurd (heq ▸ List.mem_map_of_mem h) hn.1
-    · have : (fd'.name == fd.name) = false := by simpa using heq
-      simp only [this]
-      rcases List.mem_cons.mp h with rfl | h
-      · exact absurd rfl heq
-      · exact ih hn.2 h
-
 theorem Annot.ne_plain_of_callable {a b : Annot} (h : (b.isFip || (a.isFbip && b.isFbip)) = true) :
     b ≠ .plain := by
   rintro rfl; simp [Annot.isFip, Annot.isFbip] at h

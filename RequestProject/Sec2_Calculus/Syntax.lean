@@ -230,6 +230,38 @@ abbrev Sig := List FunDef
 /-- Look up a function in the signature. -/
 def Sig.lookup (sig : Sig) (f : FName) : Option FunDef := sig.find? (·.name == f)
 
+/-- The names of the functions of a signature, in order. -/
+abbrev Sig.names (sig : Sig) : List FName := sig.map (·.name)
+
+theorem Sig.lookup_mem {sig : Sig} {g : FName} {fd : FunDef} (h : sig.lookup g = some fd) :
+    fd ∈ sig ∧ fd.name = g := by
+  unfold Sig.lookup at h
+  exact ⟨List.mem_of_find?_eq_some h, by simpa using List.find?_some h⟩
+
+theorem Sig.lookup_of_mem {sig : Sig} (hn : sig.names.Nodup) {fd : FunDef} (h : fd ∈ sig) :
+    sig.lookup fd.name = some fd := by
+  induction sig with
+  | nil => simp at h
+  | cons fd' sig ih =>
+    simp only [Sig.names, List.map_cons, List.nodup_cons] at hn
+    unfold Sig.lookup at ih ⊢
+    rw [List.find?_cons]
+    by_cases heq : fd'.name = fd.name
+    · simp only [heq, beq_self_eq_true]
+      rcases List.mem_cons.mp h with rfl | h
+      · rfl
+      · exact absurd (heq ▸ List.mem_map_of_mem h) hn.1
+    · have : (fd'.name == fd.name) = false := by simpa using heq
+      simp only [this]
+      rcases List.mem_cons.mp h with rfl | h
+      · exact absurd rfl heq
+      · exact ih hn.2 h
+
+theorem Sig.lookup_isSome_of_mem_names {sig : Sig} {f : FName} (h : f ∈ sig.names) :
+    (sig.lookup f).isSome := by
+  obtain ⟨fd, hfd, rfl⟩ := List.mem_map.mp h
+  exact List.find?_isSome.mpr ⟨fd, hfd, by simp⟩
+
 end FIP
 
 /- ══════════════════ PAPER sec. 2 END: A Language for Fully In-Place Update: the grammar ══════════════════ -/

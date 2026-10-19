@@ -23,7 +23,7 @@ namespace Examples.FingerTree
 open Koka FIP
 
 /-- Appendix A.4: finger trees. -/
-def fingertree : FipModule := [KOKA_FIP|
+def fingertree := [KOKA_FIP|
 // Adapted from "Finger Trees Explained Anew, and Slightly Simplified (Functional Pearl)", Claessen
 import std/num/int32
 
@@ -171,7 +171,8 @@ fip fun snoc(s : seq<a>, b : buffer, u3 : reuse3, x : a) : exn (seq<a>, buffer)
 theorem fingertree_wf : fingertree.sig.Wf := fingertree.wf
 
 /-- The reuse token `Reuse3(Pad, Pad, Pad)`. -/
-def u3 {n : Nat} : Val n := .ctor "Reuse3" [.ctor "Pad" [], .ctor "Pad" [], .ctor "Pad" []]
+def u3 {n : Nat} : Val n :=
+  fingertree.con "Reuse3" [fingertree.atom "Pad", fingertree.atom "Pad", fingertree.atom "Pad"]
 
 /-- The de Bruijn index `i` as a value. -/
 def bv {n : Nat} (i : Nat) (h : i < n := by decide) : Val n := .var (.bvar ⟨i, h⟩)
@@ -182,19 +183,19 @@ def bv {n : Nat} (i : Nat) (h : i < n := by decide) : Val n := .var (.bvar ⟨i,
     two `let`s bind `x, u, s, q` (the popped element, a reuse token and the rest). -/
 def pushPop : FIP.Expr 0 :=
   .letIn [false, false]
-    (.call "cons" (.ret []) (.ret [.lit 6, u3, .ctor "Empty" [], .ctor "BNil" []])) <|
-  .letIn [false, false] (.call "cons" (.ret []) (.ret [.lit 5, u3, bv 0, bv 1])) <|
-  .letIn [false, false] (.call "cons" (.ret []) (.ret [.lit 4, u3, bv 0, bv 1])) <|
-  .letIn [false, false] (.call "cons" (.ret []) (.ret [.lit 3, u3, bv 0, bv 1])) <|
-  .letIn [false, false] (.call "cons" (.ret []) (.ret [.lit 2, u3, bv 0, bv 1])) <|
-  .letIn [false, false] (.call "cons" (.ret []) (.ret [.lit 1, u3, bv 0, bv 1])) <|
-  .letIn [false, false, false, false] (.call "uncons" (.ret []) (.ret [bv 0, bv 1])) <|
-  .letIn [false, false, false, false] (.call "uncons" (.ret []) (.ret [bv 2, bv 3])) <|
+    (fingertree.call "cons" (.ret []) (.ret [.lit 6, u3, fingertree.atom "Empty", fingertree.atom "BNil"])) <|
+  .letIn [false, false] (fingertree.call "cons" (.ret []) (.ret [.lit 5, u3, bv 0, bv 1])) <|
+  .letIn [false, false] (fingertree.call "cons" (.ret []) (.ret [.lit 4, u3, bv 0, bv 1])) <|
+  .letIn [false, false] (fingertree.call "cons" (.ret []) (.ret [.lit 3, u3, bv 0, bv 1])) <|
+  .letIn [false, false] (fingertree.call "cons" (.ret []) (.ret [.lit 2, u3, bv 0, bv 1])) <|
+  .letIn [false, false] (fingertree.call "cons" (.ret []) (.ret [.lit 1, u3, bv 0, bv 1])) <|
+  .letIn [false, false, false, false] (fingertree.call "uncons" (.ret []) (.ret [bv 0, bv 1])) <|
+  .letIn [false, false, false, false] (fingertree.call "uncons" (.ret []) (.ret [bv 2, bv 3])) <|
   .ret [bv 4, bv 0]
 
 /-- The first two elements popped are `1` and `2`. -/
-theorem pushPop_example : pushPop.eval fingertree.sig 10000 = some [.lit 1, .lit 2] := by
-  decide +kernel
+theorem pushPop_example : fingertree.evalExpr pushPop = [.lit 1, .lit 2] := by
+  koka_eval
 
 end Examples.FingerTree
 

@@ -21,7 +21,7 @@ namespace Examples.QuickSort
 open Koka FIP
 
 /-- Appendix A.3: fully in-place quicksort. -/
-def quicksort : FipModule := [KOKA_FIP|
+def quicksort := [KOKA_FIP|
 import std/num/int32
 import std/os/env
 
@@ -94,12 +94,12 @@ theorem quicksort_wf : quicksort.sig.Wf := quicksort.wf
 
 /-- Quicksort sorts `[5, 2, 8, 1, 9, 3, 7, 4, 6, 0]`. -/
 theorem quicksort_example :
-    (quicksort.run "quicksort" [] [listV [5, 2, 8, 1, 9, 3, 7, 4, 6, 0]] 100000).map
-      (·.map ofListV) = some [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
-  decide +kernel
+    (quicksort.eval "quicksort" [] [listV [5, 2, 8, 1, 9, 3, 7, 4, 6, 0]]).map ofListV =
+      [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
+  koka_eval
 
 /-- Section 4.2: the usual functional-but-in-place quicksort (on `int` lists). -/
-def fbipQuicksort : FipModule := [KOKA_FIP|
+def fbipQuicksort := [KOKA_FIP|
 fbip fun split(^p : int, xs : list<int>) : (list<int>, list<int>)
   match! xs
     Cons(x, xx) ->
@@ -126,9 +126,9 @@ theorem fbipQuicksort_wf : fbipQuicksort.sig.Wf := fbipQuicksort.wf
 
 /-- The `fbip` quicksort sorts. -/
 theorem fbipQuicksort_example :
-    (fbipQuicksort.run "quicksort" [] [listV [5, 2, 8, 1, 9, 3, 7, 4, 6, 0]] 100000).map
-      (·.map ofListV) = some [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
-  decide +kernel
+    (fbipQuicksort.eval "quicksort" [] [listV [5, 2, 8, 1, 9, 3, 7, 4, 6, 0]]).map ofListV =
+      [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
+  koka_eval
 
 end Examples.QuickSort
 

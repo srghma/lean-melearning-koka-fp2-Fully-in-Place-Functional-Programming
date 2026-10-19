@@ -29,9 +29,6 @@ theorem StepsN.of_steps {sig : Sig} {e e' : Expr N} (h : Steps sig e e') :
   | refl => exact ⟨0, .refl _⟩
   | head h _ ih => obtain ⟨n, hn⟩ := ih; exact ⟨n + 1, .step h hn⟩
 
-theorem Head.not_ret {sig : Sig} {vs : List (Val N)} {e : Expr N} : ¬ Head sig (.ret vs) e := by
-  intro h; cases h
-
 theorem ECtx.plug_eq_ret {E : ECtx N} {e : Expr N} {vs : List (Val N)} (h : E.plug e = .ret vs) :
     E = .hole ∧ e = .ret vs := by
   cases E <;> simp_all [ECtx.plug]

@@ -21,7 +21,7 @@ namespace Examples.Intro
 open Koka FIP
 
 /-- Section 1 (reverse, splay trees, `smap`). -/
-def intro : FipModule := [KOKA_FIP|
+def intro := [KOKA_FIP|
 // ==================== PAPER sec. 1.1 START: Zippers and Unboxed Tuples: stree, szipper, left (PDF pp. 2-3) ====================
 type stree
   Node(left : stree, value : int, right : stree)
@@ -113,8 +113,8 @@ theorem intro_wf : intro.sig.Wf := intro.wf
 
 /-- `reverse([1,2,3,4,5]) = [5,4,3,2,1]`. -/
 theorem reverse_example :
-    intro.run "reverse" [] [listV [1, 2, 3, 4, 5]] = some [listV [5, 4, 3, 2, 1]] := by
-  decide +kernel
+    intro.eval "reverse" [] [listV [1, 2, 3, 4, 5]] = [listV [5, 4, 3, 2, 1]] := by
+  koka_eval
 
 /- ══════════════════ PAPER sec. 1 END (continued): Introduction and Overview: fully in-place reverse with match! ══════════════════ -/
 
@@ -123,20 +123,21 @@ theorem reverse_example :
 
 /-- A splay tree with keys `1, 2, 3` (right spine). -/
 def t123 : Val 0 :=
-  .ctor "Node" [atom "Leaf", .lit 1,
-    .ctor "Node" [atom "Leaf", .lit 2, .ctor "Node" [atom "Leaf", .lit 3, atom "Leaf"]]]
+  intro.con "Node" [intro.atom "Leaf", .lit 1,
+    intro.con "Node" [intro.atom "Leaf", .lit 2,
+      intro.con "Node" [intro.atom "Leaf", .lit 3, intro.atom "Leaf"]]]
 
 /-- Looking up `3` finds it and splays it to the root. -/
 theorem lookup_example :
-    intro.run "lookup" [] [t123, .lit 3] = some [atom "True",
-      .ctor "Node" [.ctor "Node" [.ctor "Node" [atom "Leaf", .lit 1, atom "Leaf"], .lit 2,
-        atom "Leaf"], .lit 3, atom "Leaf"]] := by
-  decide +kernel
+    intro.eval "lookup" [] [t123, .lit 3] = [intro.atom "True",
+      intro.con "Node" [intro.con "Node" [intro.con "Node" [intro.atom "Leaf", .lit 1,
+        intro.atom "Leaf"], .lit 2, intro.atom "Leaf"], .lit 3, intro.atom "Leaf"]] := by
+  koka_eval
 
 /-- Looking up `5` does not find it (but splays anyway). -/
 theorem lookup_missing :
-    (intro.run "lookup" [] [t123, .lit 5]).map (·.head?) = some (some (atom "False")) := by
-  decide +kernel
+    (intro.eval "lookup" [] [t123, .lit 5]).head? = some (intro.atom "False") := by
+  koka_eval
 
 /- ══════════════════ PAPER sec. 1.2 END (continued): Splay Tree Lookup and Atoms: lookup, zlookup ══════════════════ -/
 

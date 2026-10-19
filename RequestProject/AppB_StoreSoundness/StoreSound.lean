@@ -181,7 +181,7 @@ end
     distinct names (otherwise a call to an annotated function could be resolved to an
     unannotated definition of the same name). -/
 structure Sig.PaperFragment (sig : Sig) : Prop where
-  names : (sig.map (·.name)).Nodup
+  names : sig.names.Nodup
   wf : sig.Wf
   scalarFree : ∀ fd ∈ sig, (fd.borrowed ++ fd.owned).all (!·) ∧ fd.body.scalarFree
   noBudget : ∀ fd ∈ sig, fd.annot.budget = 0

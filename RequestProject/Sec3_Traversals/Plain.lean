@@ -23,7 +23,7 @@ namespace Examples.Plain
 open Koka FIP
 
 /-- Ordinary (non-`fip`) Koka functions from Sections 1 and 3. -/
-def plain : Module := [KOKA|
+def plain := [KOKA|
 fun reverse-acc( xs : list<a>, acc : list<a> ) : list<a>
   match xs
     Cons(x,xx) -> reverse-acc( xx, Cons(x,acc) )
@@ -58,8 +58,8 @@ fun is-pos(x : int) : bool
 
 /-- `palindrome([1,2,3]) = [1,2,3,3,2,1]`. -/
 theorem palindrome_example :
-    plain.run "palindrome" [] [listV [1, 2, 3]] = some [listV [1, 2, 3, 3, 2, 1]] := by
-  decide +kernel
+    plain.eval "palindrome" [] [listV [1, 2, 3]] = [listV [1, 2, 3, 3, 2, 1]] := by
+  koka_eval
 
 /- ══════════════════ PAPER sec. 1.4 END: Fully in-Place in a Functional World: ordinary Koka code ══════════════════ -/
 
@@ -68,7 +68,7 @@ theorem palindrome_example :
    and computes the same result as the ordinary recursive `tmap`. -/
 
 /-- Section 3: a fully in-place map over binary trees, using the zipper `tzipper`. -/
-def tmapZipper : FipModule := [KOKA_FIP|
+def tmapZipper := [KOKA_FIP|
 type tree<a>
   Bin(left : tree<a>, right : tree<a>)
   Tip(value : a)
@@ -101,19 +101,20 @@ theorem tmapZipper_wf : tmapZipper.sig.Wf := tmapZipper.wf
 
 /-- A tree with leaves `1, -2, 3`. -/
 def tree123 : Val 0 :=
-  .ctor "Bin" [.ctor "Bin" [.ctor "Tip" [.lit 1], .ctor "Tip" [.lit (-2)]], .ctor "Tip" [.lit 3]]
+  tmapZipper.con "Bin" [tmapZipper.con "Bin" [tmapZipper.con "Tip" [.lit 1],
+    tmapZipper.con "Tip" [.lit (-2)]], tmapZipper.con "Tip" [.lit 3]]
 
 /-- The tree with leaves `True, False, True`. -/
 def treeTFT : Val 0 :=
-  .ctor "Bin" [.ctor "Bin" [.ctor "Tip" [atom "True"], .ctor "Tip" [atom "False"]],
-    .ctor "Tip" [atom "True"]]
+  tmapZipper.con "Bin" [tmapZipper.con "Bin" [tmapZipper.con "Tip" [tmapZipper.atom "True"],
+    tmapZipper.con "Tip" [tmapZipper.atom "False"]], tmapZipper.con "Tip" [tmapZipper.atom "True"]]
 
 /-- Mapping a function over a tree with the zipper-based `tmap` gives the same result as
     the standard recursive `tmap`. -/
 theorem tmap_agree :
-    tmapZipper.run "tmap" [.fn "is-pos"] [tree123] = some [treeTFT] ∧
-    plain.run "tmap" [.fn "is-pos"] [tree123] = some [treeTFT] := by
-  decide +kernel
+    tmapZipper.eval "tmap" [tmapZipper.fnVal "is-pos"] [tree123] = [treeTFT] ∧
+    plain.eval "tmap" [plain.fnVal "is-pos"] [tree123] = [treeTFT] := by
+  koka_eval
 
 /- ══════════════════ PAPER sec. 3, 3.1 END: Fully In-Place Traversals over Polynomial Datatypes: tree map with a zipper ══════════════════ -/
 
@@ -126,7 +127,7 @@ theorem tmap_agree :
 error: Koka: the FIP check fails for [palindrome]
 -/
 #guard_msgs in
-def notFip : FipModule := [KOKA_FIP|
+def notFip := [KOKA_FIP|
 fip fun reverse-acc( xs : list<a>, acc : list<a> ) : list<a>
   match xs
     Cons(x,xx) -> reverse-acc( xx, Cons(x,acc) )

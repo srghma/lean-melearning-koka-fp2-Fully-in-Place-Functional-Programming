@@ -22,7 +22,7 @@ namespace Examples.MergeSort
 open Koka FIP
 
 /-- Appendix A.2: stable merge sort. -/
-def mergesort : FipModule := [KOKA_FIP|
+def mergesort := [KOKA_FIP|
 import std/num/int32
 import std/os/env
 
@@ -148,13 +148,13 @@ theorem mergesort_wf : mergesort.sig.Wf := mergesort.wf
 
 /-- Sorting a list: `merge-all(sequences(xs))`. -/
 def sortE (xs : List Int) : FIP.Expr 0 :=
-  .call "merge-all" (.ret []) (.call "sequences" (.ret []) (.ret [listV xs]))
+  mergesort.call "merge-all" (.ret []) (mergesort.call "sequences" (.ret []) (.ret [listV xs]))
 
 /-- Merge sort sorts `[5, 2, 8, 1, 9, 3, 7, 4, 6, 0]`. -/
 theorem sort_example :
-    ((sortE [5, 2, 8, 1, 9, 3, 7, 4, 6, 0]).eval mergesort.sig 100000).map (·.map ofListV) =
-      some [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
-  decide +kernel
+    (mergesort.evalExpr (sortE [5, 2, 8, 1, 9, 3, 7, 4, 6, 0])).map ofListV =
+      [some [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]] := by
+  koka_eval
 
 /-- The same run, as a reduction sequence of the functional semantics. -/
 theorem sort_steps :

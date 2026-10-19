@@ -22,7 +22,7 @@ namespace Examples.RedBlack
 open Koka FIP
 
 /-- Appendix A.1: red-black tree insertion. -/
-def rbtree : FipModule := [KOKA_FIP|
+def rbtree := [KOKA_FIP|
 import std/num/int32
 
 type color
@@ -107,15 +107,16 @@ def rootColor : Val 0 → String
   | _ => "Leaf"
 
 /-- Inserting `5, 2, 8, 1, 9, 3, 7, 4, 6` into the empty tree. -/
-def example_tree : Option (List (Val 0)) :=
-  rbtree.runFold "insert" (atom "Leaf")
-    ([5, 2, 8, 1, 9, 3, 7, 4, 6].map fun k => [.lit k, atom "True"])
+def example_tree : List (Val 0) :=
+  rbtree.evalFold "insert" (rbtree.atom "Leaf")
+    ([5, 2, 8, 1, 9, 3, 7, 4, 6].map fun k => [.lit k, rbtree.atom "True"])
 
 /-- The keys of the resulting tree are sorted, and its root is black. -/
 theorem insert_example :
-    example_tree.map (·.map keys) = some [[1, 2, 3, 4, 5, 6, 7, 8, 9]] ∧
-    example_tree.map (·.map rootColor) = some ["Black"] := by
-  decide +kernel
+    example_tree.map keys = [[1, 2, 3, 4, 5, 6, 7, 8, 9]] ∧
+    example_tree.map rootColor = ["Black"] := by
+  unfold example_tree
+  koka_eval
 
 end Examples.RedBlack
 
