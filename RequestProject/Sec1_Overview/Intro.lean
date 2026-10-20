@@ -98,6 +98,34 @@ fip fun is-node( ^t : stree ) : bool
     Node(_,_,_) -> True
     _ -> False
 // ==================== PAPER sec. 1.3 END: Borrowing and Second-Order Functions: smap, is-node ====================
+
+// MYTEST
+// COMPILE ERROR!
+fip fun bad-fact(n : int) : int
+  if n <= 0 then 1 else n * bad-fact(n - 1)
+
+fip fun fact(n : int) : int
+  // The 'tail' modifier forces the compiler to verify this is a tail call!
+  tail fun loop(i : int, acc : int) : int
+    if i <= 0 then acc
+    else loop(i - 1, i * acc)
+
+  loop(n, 1)
+
+fip fun fact-acc(n : int32, acc : int32) : int32
+  if n <= 0.int32 then acc
+  else fact-acc(n - 1.int32, n * acc)
+
+fip fun fact(n : int32) : int32
+  fact-acc(n, 1.int32)
+
+fip fun fact(n : int) : int
+  var acc := 1
+  var i   := n
+  while { i > 0 }
+    acc := acc * i
+    i   := i - 1
+  acc
 ]
 
 /- ══════════════════ PAPER sec. 1.3 START (continued): Borrowing and Second-Order Functions: smap, is-node (PDF p. 5) ══════════════════
