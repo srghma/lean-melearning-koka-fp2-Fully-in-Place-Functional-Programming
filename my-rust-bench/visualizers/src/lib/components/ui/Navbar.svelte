@@ -12,27 +12,47 @@
       <span
         class="rounded border border-slate-700 bg-slate-800 px-2 py-0.5 font-mono text-xs text-slate-400"
       >
-        Rust &amp; Koka
+        Granule Modes
       </span>
     </a>
-    <nav class="flex items-center gap-2">
+    <nav class="flex items-center gap-1.5 overflow-x-auto">
       <a
-        href="/no-rc"
-        class="rounded px-3 py-1.5 font-mono text-xs no-underline transition-colors {page.url
-          .pathname === '/no-rc'
+        href="/box-to-box"
+        class="rounded px-2.5 py-1 font-mono text-xs no-underline transition-colors {page.url.pathname.includes(
+          '/box-to-box'
+        ) || page.url.pathname === '/no-rc'
           ? 'bg-emerald-600 font-semibold text-white'
           : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
       >
-        No-RC (Box&lt;Node&gt;)
+        Box &rarr; Box
       </a>
       <a
-        href="/rc"
-        class="rounded px-3 py-1.5 font-mono text-xs no-underline transition-colors {page.url
-          .pathname === '/rc'
+        href="/rc-to-rc"
+        class="rounded px-2.5 py-1 font-mono text-xs no-underline transition-colors {page.url.pathname.includes(
+          '/rc-to-rc'
+        ) || page.url.pathname === '/rc'
           ? 'bg-purple-600 font-semibold text-white'
           : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
       >
-        RC (Rc&lt;Node&gt; &amp; Perceus COW)
+        Rc &rarr; Rc
+      </a>
+      <a
+        href="/rc-to-box"
+        class="rounded px-2.5 py-1 font-mono text-xs no-underline transition-colors {page.url
+          .pathname === '/rc-to-box'
+          ? 'bg-sky-600 font-semibold text-white'
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
+      >
+        Rc &rarr; Box
+      </a>
+      <a
+        href="/box-to-rc"
+        class="rounded px-2.5 py-1 font-mono text-xs no-underline transition-colors {page.url
+          .pathname === '/box-to-rc'
+          ? 'bg-amber-600 font-semibold text-white'
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
+      >
+        Box &rarr; Rc
       </a>
     </nav>
   </div>

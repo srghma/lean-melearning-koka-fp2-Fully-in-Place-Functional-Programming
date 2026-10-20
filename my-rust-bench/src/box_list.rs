@@ -1,67 +1,35 @@
-// ==========================================
-// 1. Boxed Singly-Linked List
-// ==========================================
+// =========================================================================
+// Data Structure: Box-Backed Unique Singly-Linked List
+// =========================================================================
+
 pub struct Node<T> {
     pub val: T,
     pub next: Option<Box<Node<T>>>,
 }
 
-pub struct List<T> {
+pub struct BoxList<T> {
     pub head: Option<Box<Node<T>>>,
-}
-
-impl<T> Default for List<T> {
-    fn default() -> Self {
-        List { head: None }
-    }
 }
 
 pub type Link<T> = Option<Box<Node<T>>>;
 
-#[inline(always)]
-fn reverse_acc<T>(xs: Link<T>, acc: Link<T>) -> Link<T> {
-    match xs {
-        Some(mut node) => {
-            let next = node.next.take();
-            node.next = acc;
-            reverse_acc(next, Some(node))
-        }
-        None => acc,
+impl<T> Default for BoxList<T> {
+    fn default() -> Self {
+        BoxList { head: None }
     }
 }
 
-impl<T> List<T> {
-    #[inline(always)]
-    pub fn reverse_rec(mut self) -> Self {
-        let xs = self.head.take();
-        List {
-            head: reverse_acc(xs, None),
-        }
-    }
-
-    // 2. Iterative while-let version
-    #[inline(always)]
-    pub fn reverse_iter(mut self) -> Self {
-        let mut acc = None;
-        let mut xs = self.head.take();
-        while let Some(mut node) = xs {
-            xs = std::mem::replace(&mut node.next, acc);
-            acc = Some(node);
-        }
-        List { head: acc }
-    }
-
-    #[inline(always)]
-    pub fn from_iter(iter: impl IntoIterator<Item = T>) -> Self {
+impl<T> FromIterator<T> for BoxList<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut head = None;
         for val in iter {
             head = Some(Box::new(Node { val, next: head }));
         }
-        List { head }
+        BoxList { head }
     }
 }
 
-impl<T: Clone> Clone for List<T> {
+impl<T: Clone> Clone for BoxList<T> {
     fn clone(&self) -> Self {
         let mut elems = Vec::new();
         let mut cur = &self.head;
@@ -74,7 +42,7 @@ impl<T: Clone> Clone for List<T> {
 }
 
 // Custom iterative drop to prevent recursion stack overflow on large lists
-impl<T> Drop for List<T> {
+impl<T> Drop for BoxList<T> {
     fn drop(&mut self) {
         let mut cur = self.head.take();
         while let Some(mut node) = cur {

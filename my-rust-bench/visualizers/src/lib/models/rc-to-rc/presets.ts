@@ -322,4 +322,63 @@ export const RC_PRESETS: RcPresetConfig[] = [
       }
     ]
   }
+,
+
+  // Preset 6: Last Node Shared
+  {
+    id: 'last-shared',
+    name: 'Last Node Shared (RC = 2 on Tail)',
+    shortDesc: 'Only the last node (Node 4) is held externally',
+    longDesc:
+      'Nodes 1, 2, and 3 have RC = 1 and reuse in-place. Only the terminal Node 4 has RC = 2 and triggers Copy-on-Write, preserving handle.',
+    activeRoot: 'list1',
+    canvasWidth: 840,
+    canvasHeight: 360,
+    roots: [
+      { name: 'list1', targetAddr: '0x100', color: '#38bdf8' },
+      { name: 'handle', targetAddr: '0x400', color: '#f59e0b' }
+    ],
+    nodes: [
+      {
+        id: 'n1',
+        addr: '0x100',
+        val: 1,
+        label: 'Node 1',
+        next: '0x200',
+        x: 40,
+        y: 50,
+        tag: 'REUSED IN-PLACE'
+      },
+      {
+        id: 'n2',
+        addr: '0x200',
+        val: 2,
+        label: 'Node 2',
+        next: '0x300',
+        x: 230,
+        y: 50,
+        tag: 'REUSED IN-PLACE'
+      },
+      {
+        id: 'n3',
+        addr: '0x300',
+        val: 3,
+        label: 'Node 3',
+        next: '0x400',
+        x: 430,
+        y: 50,
+        tag: 'REUSED IN-PLACE'
+      },
+      {
+        id: 'n4',
+        addr: '0x400',
+        val: 4,
+        label: 'Node 4 (shared tail)',
+        next: null,
+        x: 630,
+        y: 50,
+        tag: 'SHARED TAIL'
+      }
+    ]
+  }
 ];

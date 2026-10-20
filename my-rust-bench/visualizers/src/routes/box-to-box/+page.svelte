@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AlgoMode, RegisterItem } from '#lib/types/common';
-  import { NO_RC_WHILE_CODE, NO_RC_TAIL_CODE } from '#lib/models/no-rc/code';
-  import { generateNoRcSteps } from '#lib/models/no-rc/generator';
+  import { BOX_TO_BOX_WHILE_CODE, BOX_TO_BOX_TAIL_CODE } from '#lib/models/box-to-box/code';
+  import { generateNoRcSteps } from '#lib/models/box-to-box/generator';
   import NarrativeBox from '#lib/components/execution/NarrativeBox.svelte';
   import CodePanel from '#lib/components/execution/CodePanel.svelte';
   import RegistersPanel from '#lib/components/execution/RegistersPanel.svelte';
@@ -21,7 +21,7 @@
 
   const { steps, addresses } = $derived(generateNoRcSteps(values));
   const current = $derived(steps[stepIdx] || steps[0]);
-  const codeLines = $derived(algoMode === 'while' ? NO_RC_WHILE_CODE : NO_RC_TAIL_CODE);
+  const codeLines = $derived(algoMode === 'while' ? BOX_TO_BOX_WHILE_CODE : BOX_TO_BOX_TAIL_CODE);
   const activeLine = $derived(algoMode === 'while' ? current.lineWhile : current.lineTail);
 
   $effect(() => {

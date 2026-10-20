@@ -19,3 +19,9 @@ export interface BaseStep {
   badge?: string;
   badgeType?: 'emerald' | 'amber' | 'purple' | 'slate';
 }
+
+export const toCodeLines = (src: string): CodeLine[] =>
+  src
+    .replace(/^\n+|\n+$/g, '')
+    .split('\n')
+    .map((text, idx) => ({ num: idx + 1, text }));

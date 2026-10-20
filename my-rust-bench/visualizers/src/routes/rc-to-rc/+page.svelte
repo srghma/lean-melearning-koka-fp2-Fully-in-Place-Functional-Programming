@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { AlgoMode, RegisterItem } from '#lib/types/common';
-  import { RC_WHILE_CODE, RC_TAIL_CODE } from '#lib/models/rc/code';
-  import { RC_PRESETS } from '#lib/models/rc/presets';
-  import { simulateRcGraph } from '#lib/models/rc/simulator';
+  import { RC_TO_RC_WHILE_CODE, RC_TO_RC_TAIL_CODE } from '#lib/models/rc-to-rc/code';
+  import { RC_PRESETS } from '#lib/models/rc-to-rc/presets';
+  import { simulateRcGraph } from '#lib/models/rc-to-rc/simulator';
   import NarrativeBox from '#lib/components/execution/NarrativeBox.svelte';
   import CodePanel from '#lib/components/execution/CodePanel.svelte';
   import RegistersPanel from '#lib/components/execution/RegistersPanel.svelte';
@@ -24,7 +24,7 @@
   const activePreset = $derived(RC_PRESETS.find((p) => p.id === selectedPresetId) || RC_PRESETS[0]);
   const { steps, nodeMeta } = $derived(simulateRcGraph(activePreset));
   const current = $derived(steps[stepIdx] || steps[0]);
-  const codeLines = $derived(algoMode === 'while' ? RC_WHILE_CODE : RC_TAIL_CODE);
+  const codeLines = $derived(algoMode === 'while' ? RC_TO_RC_WHILE_CODE : RC_TO_RC_TAIL_CODE);
   const activeLine = $derived(algoMode === 'while' ? current.lineWhile : current.lineTail);
 
   $effect(() => {

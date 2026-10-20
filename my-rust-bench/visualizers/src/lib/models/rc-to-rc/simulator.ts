@@ -252,11 +252,7 @@ export function simulateRcGraph(preset: RcPresetConfig): {
       const cowAddr = `${currAddr}'`;
       const originalMeta = nodeMeta[currAddr];
       const cowY =
-        preset.id === 'three-way'
-          ? 365
-          : preset.id === 'shared-tail'
-            ? 260
-            : originalMeta.y + 140;
+        preset.id === 'three-way' ? 365 : preset.id === 'shared-tail' ? 260 : originalMeta.y + 140;
 
       nodeMeta[cowAddr] = {
         id: `${originalMeta.id}_cow`,

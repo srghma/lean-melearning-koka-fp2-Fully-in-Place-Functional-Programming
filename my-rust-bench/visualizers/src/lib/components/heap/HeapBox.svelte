@@ -9,6 +9,7 @@
     nextText,
     rc,
     tag,
+    kind,
     isCurrent = false,
     isAcc = false,
     isXs = false,
@@ -23,6 +24,7 @@
     nextText?: string;
     rc?: number;
     tag?: string;
+    kind?: 'box' | 'rc';
     isCurrent?: boolean;
     isAcc?: boolean;
     isXs?: boolean;
@@ -56,6 +58,7 @@
     stroke-width={isCurrent || isAcc ? 2.5 : 1.5}
   />
   <rect {x} {y} {width} height="22" rx="6" fill="#0f172a" />
+
   <text
     x={x + 8}
     y={y + 15}
@@ -66,7 +69,20 @@
   >
     {address}
   </text>
-  {#if rc !== undefined}
+
+  {#if kind === 'box'}
+    <rect x={x + width - 46} y={y + 3} width="40" height="16" rx="4" fill="#064e3b" />
+    <text
+      x={x + width - 42}
+      y={y + 14}
+      fill="#6ee7b7"
+      font-size="9"
+      font-family="monospace"
+      font-weight="bold"
+    >
+      BOX
+    </text>
+  {:else if rc !== undefined}
     <rect
       x={x + width - 55}
       y={y + 3}
@@ -86,9 +102,11 @@
       RC: {rc}
     </text>
   {/if}
+
   <text x={x + 10} y={y + 44} fill="#e2e8f0" font-size="12" font-family="monospace">
     val: {val}
   </text>
+
   {#if nextText}
     <text x={x + 10} y={y + 64} fill="#64748b" font-size="10" font-family="monospace">
       next: {nextText}
@@ -97,7 +115,11 @@
     <text
       x={x + 10}
       y={y + 64}
-      fill={tag.includes('COW') ? '#c084fc' : tag.includes('REUSED') ? '#34d399' : '#64748b'}
+      fill={tag.includes('COW')
+        ? '#c084fc'
+        : tag.includes('REUSED') || tag.includes('UNIQUE')
+          ? '#34d399'
+          : '#64748b'}
       font-size="9"
       font-family="monospace"
       font-weight="bold"

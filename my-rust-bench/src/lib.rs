@@ -33,7 +33,7 @@ impl<T> RcRef<T> for &Rc<T> {
 impl<T> RcRef<T> for &&Rc<T> {
     #[inline(always)]
     fn get_rc(&self) -> &Rc<T> {
-        *self
+        self
     }
 }
 
@@ -62,5 +62,9 @@ macro_rules! dbg_rc {
     };
 }
 
-pub mod no_rc;
-pub mod rc;
+pub mod box_list;
+pub mod box_to_box;
+pub mod box_to_rc;
+pub mod rc_list;
+pub mod rc_to_box;
+pub mod rc_to_rc;
