@@ -417,7 +417,9 @@ fn preset_5_middle_shared() {
 // =========================================================================
 fn preset_6_last_shared() {
     println!("\n{BOLD}{CYAN}======================================================================{RESET}");
-    println!("{BOLD}{CYAN} Preset 6: Last Node Shared (RC = 2 on Tail)                          {RESET}");
+    println!(
+        "{BOLD}{CYAN} Preset 6: Last Node Shared (RC = 2 on Tail)                          {RESET}"
+    );
     println!("{DIM} Nodes 1, 2, 3 unique; only Node 4 is held externally                {RESET}");
     println!("{DIM} Expected: Nodes 1, 2, 3 reuse in-place. Node 4 triggers COW.        {RESET}");
     println!("{BOLD}{CYAN}======================================================================{RESET}\n");
@@ -481,7 +483,6 @@ fn preset_6_last_shared() {
 // Preset 7: Cross-Representation (Rc <-> Box)
 // =========================================================================
 fn preset_7_cross_repr() {
-
     println!("\n{BOLD}{CYAN}======================================================================{RESET}");
     println!(
         "{BOLD}{CYAN} Preset 6: Cross-Representation (Rc <-> Box)                          {RESET}"

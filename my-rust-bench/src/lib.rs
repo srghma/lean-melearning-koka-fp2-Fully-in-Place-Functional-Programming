@@ -65,6 +65,7 @@ macro_rules! dbg_rc {
 pub mod box_list;
 pub mod box_to_box;
 pub mod box_to_rc;
+pub mod ownership_and_borrowing_four_by_four_matrix;
 pub mod rc_list;
 pub mod rc_to_box;
 pub mod rc_to_rc;

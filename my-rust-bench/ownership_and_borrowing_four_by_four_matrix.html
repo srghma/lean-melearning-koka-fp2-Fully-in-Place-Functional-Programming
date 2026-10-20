@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The 4×4 Ownership & Borrowing Reversal Matrix</title>
+  <style>
+    :root {
+      --bg: #020617;
+      --card-bg: #0f172a;
+      --border: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --box-color: #10b981;
+      --mut-color: #f59e0b;
+      --rc-color: #a855f7;
+      --ref-color: #38bdf8;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      padding: 2.5rem 1.5rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(to right, #38bdf8, #a855f7, #10b981);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-box { background: var(--box-color); }
+    .dot-mut { background: var(--mut-color); }
+    .dot-rc  { background: var(--rc-color); }
+    .dot-ref { background: var(--ref-color); }
+    .dot-err { background: var(--danger); }
+
+    /* Matrix Table Styling */
+    .table-container {
+      overflow-x: auto;
+      margin-bottom: 3rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card-bg);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th, td {
+      padding: 1.25rem 1rem;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: #090d16;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .row-header {
+      background: #090d16;
+      font-weight: 700;
+      white-space: nowrap;
+      width: 16%;
+    }
+
+    .cell {
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+      font-size: 0.88rem;
+    }
+
+    .cell:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: #64748b;
+    }
+
+    .cell.active {
+      border: 2px solid var(--ref-color) !important;
+      background: rgba(56, 189, 248, 0.06);
+    }
+
+    .cell-title {
+      font-weight: 700;
+      font-size: 0.92rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .tag {
+      font-family: monospace;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .tag-fip   { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .tag-cow   { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .tag-view  { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .tag-forbid{ background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    .cell-desc {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    /* Inspector Card */
+    .inspector {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 3rem;
+    }
+
+    .inspector h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .type-sig {
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: #38bdf8;
+      background: #090d16;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin: 1rem 0;
+      overflow-x: auto;
+    }
+
+    .code-block {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+
+    .meta-box {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .meta-box strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+
+    /* Theory section */
+    .theory-section {
+      margin-top: 4rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2.5rem;
+    }
+
+    .theory-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .theory-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .theory-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      color: #e2e8f0;
+    }
+
+    .theory-card p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: monospace;
+      color: #cbd5e1;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>The 4×4 Ownership &amp; Borrowing Reversal Matrix</h1>
+      <p class="subtitle">
+        A complete map of list reversal across Rust's ownership spectrum and Granule's linear graded types.
+        Click any cell in the matrix to inspect its tail-recursive mechanics, memory safety guarantees, and allocation costs.
+      </p>
+
+      <div class="legend-bar">
+        <div class="legend-item"><span class="dot dot-box"></span> <span>Owned Unique (Box)</span></div>
+        <div class="legend-item"><span class="dot dot-mut"></span> <span>Borrowed Unique (&amp;mut)</span></div>
+        <div class="legend-item"><span class="dot dot-rc"></span> <span>Owned Shared (Rc)</span></div>
+        <div class="legend-item"><span class="dot dot-ref"></span> <span>Borrowed Shared (&amp;)</span></div>
+        <div class="legend-item"><span class="dot dot-err"></span> <span>Statically Forbidden</span></div>
+      </div>
+    </header>
+
+    <!-- The 4x4 Table -->
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Input \ Output</th>
+            <th>[Col 1] Owned Unique<br><span style="color: var(--box-color);">BoxList&lt;T&gt;</span></th>
+            <th>[Col 2] Borrowed Unique<br><span style="color: var(--mut-color);">&amp;mut BoxList&lt;T&gt;</span></th>
+            <th>[Col 3] Owned Shared<br><span style="color: var(--rc-color);">RcList&lt;T&gt;</span></th>
+            <th>[Col 4] Borrowed Shared<br><span style="color: var(--ref-color);">&amp;BoxList&lt;T&gt; / View</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row 1: Owned Box -->
+          <tr>
+            <td class="row-header">
+              <span style="color: var(--box-color);">[Row 1] Owned Box</span><br>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Linear {1} Ownership</span>
+            </td>
+            <td class="cell" onclick="selectCell(0, 0)">
+              <div class="cell-title">
+                <span>row1_col1</span>
+                <span class="tag tag-fip">0 Allocs</span>
+              </div>
+              <div class="cell-desc">FIP Consume &amp; Flip. <code>reverse_box_to_box_tail</code></div>
+            </td>
+            <td class="cell" onclick="selectCell(0, 1)">
+              <div class="cell-title">
+                <span>row1_col2</span>
+                <span class="tag tag-fip">In-Place</span>
+              </div>
+              <div class="cell-desc">Consumes Box and assigns into <code>*target</code> slot.</div>
+            </td>
+            <td class="cell" onclick="selectCell(0, 2)">
+              <div class="cell-title">
+                <span>row1_col3</span>
+                <span class="tag tag-cow">N Allocs</span>
+              </div>
+              <div class="cell-desc">Packages unique nodes into <code>RcBox</code> control blocks.</div>
+            </td>
+            <td class="cell" onclick="selectCell(0, 3)">
+              <div class="cell-title">
+                <span>row1_col4</span>
+                <span class="tag tag-view">Borrow</span>
+              </div>
+              <div class="cell-desc">Reverses into slot and returns immutable borrow <code>&amp;*slot</code>.</div>
+            </td>
+          </tr>
+
+          <!-- Row 2: Borrowed Mut -->
+          <tr>
+            <td class="row-header">
+              <span style="color: var(--mut-color);">[Row 2] &amp;mut BoxList</span><br>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Exclusive Temporary View</span>
+            </td>
+            <td class="cell" onclick="selectCell(1, 0)">
+              <div class="cell-title">
+                <span>row2_col1</span>
+                <span class="tag tag-fip">0 Allocs</span>
+              </div>
+              <div class="cell-desc">Drains via <code>take()</code>, returns owned reversed Box.</div>
+            </td>
+            <td class="cell" onclick="selectCell(1, 1)">
+              <div class="cell-title">
+                <span>row2_col2</span>
+                <span class="tag tag-fip">0 Allocs</span>
+              </div>
+              <div class="cell-desc">Mutates caller's memory in-place without reallocating.</div>
+            </td>
+            <td class="cell" onclick="selectCell(1, 2)">
+              <div class="cell-title">
+                <span>row2_col3</span>
+                <span class="tag tag-cow">N Allocs</span>
+              </div>
+              <div class="cell-desc">Drains <code>&amp;mut</code>, converting unique nodes to Rc.</div>
+            </td>
+            <td class="cell" onclick="selectCell(1, 3)">
+              <div class="cell-title">
+                <span>row2_col4</span>
+                <span class="tag tag-view">Downgrade</span>
+              </div>
+              <div class="cell-desc">Reverses in-place and downgrades <code>&amp;mut</code> to <code>&amp;</code>.</div>
+            </td>
+          </tr>
+
+          <!-- Row 3: Owned Rc -->
+          <tr>
+            <td class="row-header">
+              <span style="color: var(--rc-color);">[Row 3] Owned Rc</span><br>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Shared {0..∞} with COW</span>
+            </td>
+            <td class="cell" onclick="selectCell(2, 0)">
+              <div class="cell-title">
+                <span>row3_col1</span>
+                <span class="tag tag-fip">0 or N Allocs</span>
+              </div>
+              <div class="cell-desc"><code>try_unwrap</code>: 0 atomic updates if uniq, COW if shared.</div>
+            </td>
+            <td class="cell" onclick="selectCell(2, 1)">
+              <div class="cell-title">
+                <span>row3_col2</span>
+                <span class="tag tag-cow">Hybrid</span>
+              </div>
+              <div class="cell-desc">Unwraps/clones into Box and writes into <code>&amp;mut target</code>.</div>
+            </td>
+            <td class="cell" onclick="selectCell(2, 2)">
+              <div class="cell-title">
+                <span>row3_col3</span>
+                <span class="tag tag-cow">Perceus</span>
+              </div>
+              <div class="cell-desc"><code>Rc::get_mut</code> dynamic check: in-place or fresh COW.</div>
+            </td>
+            <td class="cell" onclick="selectCell(2, 3)">
+              <div class="cell-title">
+                <span>row3_col4</span>
+                <span class="tag tag-view">Borrow</span>
+              </div>
+              <div class="cell-desc">Perceus-reverses into slot and reborrows as <code>&amp;RcList</code>.</div>
+            </td>
+          </tr>
+
+          <!-- Row 4: Borrowed Shared -->
+          <tr>
+            <td class="row-header">
+              <span style="color: var(--ref-color);">[Row 4] &amp;BoxList</span><br>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Shared Immutable View</span>
+            </td>
+            <td class="cell" onclick="selectCell(3, 0)">
+              <div class="cell-title">
+                <span>row4_col1</span>
+                <span class="tag tag-cow">N Clones</span>
+              </div>
+              <div class="cell-desc">Tail-recursively clones borrowed elements into fresh Box.</div>
+            </td>
+            <td class="cell" onclick="selectCell(3, 1)">
+              <div class="cell-title">
+                <span>row4_col2</span>
+                <span class="tag tag-forbid">Forbidden / Slot</span>
+              </div>
+              <div class="cell-desc"><code>&amp;T &rarr; &amp;mut T</code> is illegal. Clones into separate target slot.</div>
+            </td>
+            <td class="cell" onclick="selectCell(3, 2)">
+              <div class="cell-title">
+                <span>row4_col3</span>
+                <span class="tag tag-cow">N Allocs</span>
+              </div>
+              <div class="cell-desc">Clones borrowed values into freshly allocated <code>Rc</code> cells.</div>
+            </td>
+            <td class="cell" onclick="selectCell(3, 3)">
+              <div class="cell-title">
+                <span>row4_col4</span>
+                <span class="tag tag-fip">0 Allocs View</span>
+              </div>
+              <div class="cell-desc">Zero-allocation <code>ReversedView&lt;'a, T&gt;</code> iterator.</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Interactive Inspector Box -->
+    <div class="inspector" id="inspectorBox">
+      <h2 id="insTitle">Select a cell above</h2>
+      <div class="type-sig" id="insSig">Mathematical Type Signature will appear here</div>
+      <p id="insDesc" style="color: var(--text-muted); font-size: 0.95rem;">
+        Click on any cell in the 4×4 table above to inspect its algebraic formulation, memory layout, and implementation.
+      </p>
+
+      <div class="grid-2">
+        <div class="meta-box">
+          <strong>Heap Allocator Traffic:</strong>
+          <span id="insAlloc">—</span>
+        </div>
+        <div class="meta-box">
+          <strong>Linear Logic / Granule Typing:</strong>
+          <span id="insGranule">—</span>
+        </div>
+      </div>
+
+      <pre class="code-block" id="insCode">// Rust code implementation</pre>
+    </div>
+
+    <!-- Theoretical Foundations -->
+    <div class="theory-section">
+      <h2 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 0.5rem;">Theoretical Foundations</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem;">
+        How Rust's borrow checker and functional uniqueness typing systems map to this matrix.
+      </p>
+
+      <div class="theory-grid">
+        <div class="theory-card">
+          <h3 style="color: var(--box-color);">1. Linear Uniqueness ({1})</h3>
+          <p>
+            Represented by <code>BoxList&lt;T&gt;</code>. Exactly one handle exists.
+            The transformation consumes the heap cell and repoints the forward link backward in-place.
+            No reference counter is required (0 bytes overhead), and stack frames are completely eliminated via Tail-Call Optimization (TCO).
+          </p>
+        </div>
+
+        <div class="theory-card">
+          <h3 style="color: var(--mut-color);">2. Exclusive Borrowing (&amp;mut)</h3>
+          <p>
+            A temporary permission to mutate an existing location without transferring ownership.
+            The pointer flip occurs in-place, preserving caller identity.
+            The function returns either a reborrowed <code>&amp;mut</code> or downgrades to an immutable <code>&amp;</code> view.
+          </p>
+        </div>
+
+        <div class="theory-card">
+          <h3 style="color: var(--rc-color);">3. Perceus Copy-on-Write (Dynamic FIP)</h3>
+          <p>
+            Represented by <code>RcList&lt;T&gt;</code>. When <code>strong_count == 1</code>, the cell is statically unique at that moment,
+            allowing in-place pointer flipping without allocation.
+            When <code>strong_count &gt; 1</code>, it duplicates only the shared node, achieving amortized in-place functional programming.
+          </p>
+        </div>
+
+        <div class="theory-card">
+          <h3 style="color: var(--danger);">4. Aliasing XOR Mutability Theorem</h3>
+          <p>
+            Cell <code>[Row 4, Col 2]</code> illustrates why <code>&amp;T &rarr; &amp;mut T</code> cannot exist directly in safe Rust.
+            If multiple readers view <code>&amp;BoxList</code>, turning it into <code>&amp;mut</code> would create data races and dangling pointers.
+            Safe mutation requires taking a separate exclusive target destination slot.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const matrixData = [
+      // Row 1: Owned Box
+      [
+        {
+          title: "Cell [1, 1]: Owned Box → Owned Box",
+          sig: "reverse : List a {1} -> List a {1}",
+          granule: "List a [1] -> List a [1] (Pure Linear Morphism)",
+          alloc: "0 allocations. 100% in-place mutation of existing heap cells.",
+          desc: "Consumes the owned unique list, flips each pointer backward via mem::replace, and returns the owned list. Compiles to a single assembly jump loop with O(1) stack space.",
+          code: `// ==== ALREADY IMPLEMENTED IN src/box_to_box.rs ====
+#[inline(always)]
+pub fn row1_col1_owned_box_to_owned_box<T>(mut list: BoxList<T>) -> BoxList<T> {
+    BoxList { head: reverse_box_to_box_tail(list.head.take()) }
+}`
+        },
+        {
+          title: "Cell [1, 2]: Owned Box → Borrowed Unique (&mut BoxList)",
+          sig: "reverse_into : List a {1} -> &mut (List a {1}) -> &mut (List a {1})",
+          granule: "List a [1] -> &mut (List a) [1] -> &mut (List a)",
+          alloc: "0 allocations. Moves owned list into caller-supplied exclusive target.",
+          desc: "Consumes an owned unique list, tail-recursively flips it, and installs the resulting head pointer into the caller's mutable memory location, returning the reborrowed &mut handle.",
+          code: `#[inline(always)]
+pub fn row1_col2_owned_box_to_mut_box<'a, T>(
+    list: BoxList<T>,
+    target: &'a mut BoxList<T>,
+) -> &'a mut BoxList<T> {
+    *target = row1_col1_owned_box_to_owned_box(list);
+    target
+}`
+        },
+        {
+          title: "Cell [1, 3]: Owned Box → Owned Shared (RcList)",
+          sig: "box_to_rc : List a {1} -> List a {0..*}",
+          granule: "List a [1] -> List a [0..∞] (Promotion / Packaging)",
+          alloc: "N allocations: Creates an RcBox control block (strong=1, weak=0) for each element.",
+          desc: "Consumes each linear Box cell and wraps its payload into an Rc reference counter header. This packages linear resources into shared persistent data.",
+          code: `// ==== ALREADY IMPLEMENTED IN src/box_to_rc.rs ====
+#[inline(always)]
+pub fn row1_col3_owned_box_to_owned_rc<T>(mut list: BoxList<T>) -> RcList<T> {
+    RcList { head: reverse_box_to_rc_tail(list.head.take()) }
+}`
+        },
+        {
+          title: "Cell [1, 4]: Owned Box → Borrowed Shared (&BoxList)",
+          sig: "reverse_borrow : List a {1} -> slot: &mut (List a) -> & (List a)",
+          granule: "List a [1] -> & (List a)",
+          alloc: "0 allocations. Consumes list, reverses into slot, downgrades to immutable view.",
+          desc: "Consumes the owned list, reverses it into a mutable storage slot provided by caller, and immediately downgrades the reference into an immutable shared borrow &BoxList<T>.",
+          code: `#[inline(always)]
+pub fn row1_col4_owned_box_to_shared_ref<'a, T>(
+    list: BoxList<T>,
+    slot: &'a mut BoxList<T>,
+) -> &'a BoxList<T> {
+    *slot = row1_col1_owned_box_to_owned_box(list);
+    slot
+}`
+        }
+      ],
+
+      // Row 2: Borrowed Mut
+      [
+        {
+          title: "Cell [2, 1]: Borrowed Unique → Owned Box",
+          sig: "drain_reverse : &mut (List a {1}) -> List a {1}",
+          granule: "&mut (List a) -> List a [1] (Drain & Promote)",
+          alloc: "0 allocations. Leaves source list empty (None), transfers ownership to return.",
+          desc: "Drains the caller's mutable memory location using head.take(). The extracted list is reversed tail-recursively in-place and returned as a fully owned BoxList.",
+          code: `#[inline(always)]
+pub fn row2_col1_mut_box_to_owned_box<T>(list: &mut BoxList<T>) -> BoxList<T> {
+    let owned = list.head.take();
+    BoxList { head: reverse_box_to_box_tail(owned) }
+}`
+        },
+        {
+          title: "Cell [2, 2]: Borrowed Unique → Borrowed Unique (&mut BoxList)",
+          sig: "reverse_in_place : &mut (List a) -> &mut (List a)",
+          granule: "&mut (List a) -> &mut (List a) (Pure In-Place Inversion)",
+          alloc: "0 allocations. Direct in-place mutation of caller's structure.",
+          desc: "The classic in-place linked-list reverse. Does not change memory addresses of heap nodes, does not allocate memory, and preserves caller identity.",
+          code: `#[inline(always)]
+pub fn row2_col2_mut_box_to_mut_box<'a, T>(list: &'a mut BoxList<T>) -> &'a mut BoxList<T> {
+    let owned = list.head.take();
+    list.head = reverse_box_to_box_tail(owned);
+    list
+}`
+        },
+        {
+          title: "Cell [2, 3]: Borrowed Unique → Owned Shared (RcList)",
+          sig: "drain_to_rc : &mut (List a {1}) -> List a {0..*}",
+          granule: "&mut (List a) -> List a [0..∞]",
+          alloc: "N allocations: Creates Rc control blocks for drained elements.",
+          desc: "Drains the caller's unique list, leaving the caller's head as None, and tail-recursively moves the nodes into reference-counted Rc control blocks.",
+          code: `#[inline(always)]
+pub fn row2_col3_mut_box_to_owned_rc<T>(list: &mut BoxList<T>) -> RcList<T> {
+    let owned = list.head.take();
+    RcList { head: reverse_box_to_rc_tail(owned) }
+}`
+        },
+        {
+          title: "Cell [2, 4]: Borrowed Unique → Borrowed Shared (&BoxList)",
+          sig: "downgrade_reverse : &'a mut (List a) -> &'a (List a)",
+          granule: "&mut (List a) -> & (List a) (Subtyping / Lifetime Reborrow)",
+          alloc: "0 allocations. In-place pointer flip followed by borrow downgrade.",
+          desc: "Mutates the list in-place exclusively, then downgrades the reference lifetime from an exclusive &mut T to an immutable shared view &T.",
+          code: `#[inline(always)]
+pub fn row2_col4_mut_box_to_shared_ref<'a, T>(list: &'a mut BoxList<T>) -> &'a BoxList<T> {
+    let owned = list.head.take();
+    list.head = reverse_box_to_box_tail(owned);
+    list
+}`
+        }
+      ],
+
+      // Row 3: Owned Rc
+      [
+        {
+          title: "Cell [3, 1]: Owned Shared → Owned Box",
+          sig: "rc_to_box : List a {0..*} -> List a {1}",
+          granule: "List a [0..∞] -> List a [1] (Uniqueness Recovery / Unwrapping)",
+          alloc: "0 atomic updates if unique (Rc::try_unwrap); falls back to N clones if shared.",
+          desc: "Tests Rc::try_unwrap on each node. If RC == 1, ownership is recovered without atomic increments, and value is moved into a Box. If shared, elements are cloned.",
+          code: `// ==== ALREADY IMPLEMENTED IN src/rc_to_box.rs ====
+#[inline(always)]
+pub fn row3_col1_owned_rc_to_owned_box<T: Clone>(mut list: RcList<T>) -> BoxList<T> {
+    BoxList { head: reverse_rc_to_box_tail(list.head.take()) }
+}`
+        },
+        {
+          title: "Cell [3, 2]: Owned Shared → Borrowed Unique (&mut BoxList)",
+          sig: "rc_into_mut_box : List a {0..*} -> &mut (List a {1}) -> &mut (List a {1})",
+          granule: "List a [0..∞] -> &mut (List a)",
+          alloc: "Depends on RC: 0 if unique, N if shared.",
+          desc: "Recovers unique Box nodes from the input Rc list and assigns the result directly into an existing &mut target location.",
+          code: `#[inline(always)]
+pub fn row3_col2_owned_rc_to_mut_box<'a, T: Clone>(
+    list: RcList<T>,
+    target: &'a mut BoxList<T>,
+) -> &'a mut BoxList<T> {
+    *target = row3_col1_owned_rc_to_owned_box(list);
+    target
+}`
+        },
+        {
+          title: "Cell [3, 3]: Owned Shared → Owned Shared (RcList)",
+          sig: "perceus_reverse : List a -> List a",
+          granule: "List a -> List a (Perceus Dynamic In-Place Reference Counting)",
+          alloc: "0 allocations if RC==1 (in-place reuse); allocates new Rc nodes only when RC > 1.",
+          desc: "Perceus algorithm: tests Rc::get_mut. When RC == 1, flips pointer in-place without memory allocation. When RC > 1, duplicates the shared node to preserve persistent branches.",
+          code: `// ==== ALREADY IMPLEMENTED IN src/rc_to_rc.rs ====
+#[inline(always)]
+pub fn row3_col3_owned_rc_to_owned_rc<T: Clone>(mut list: RcList<T>) -> RcList<T> {
+    RcList { head: reverse_rc_to_rc_tail(list.head.take()) }
+}`
+        },
+        {
+          title: "Cell [3, 4]: Owned Shared → Borrowed Shared (&RcList)",
+          sig: "rc_reverse_borrow : List a -> slot: &mut (RcList) -> & (RcList)",
+          granule: "List a -> & (List a)",
+          alloc: "0 allocations if RC==1, N if shared.",
+          desc: "Perceus-reverses the Rc list into a temporary mutable slot, returning an immutable shared view &RcList.",
+          code: `#[inline(always)]
+pub fn row3_col4_owned_rc_to_shared_ref<'a, T: Clone>(
+    list: RcList<T>,
+    slot: &'a mut RcList<T>,
+) -> &'a RcList<T> {
+    *slot = row3_col3_owned_rc_to_owned_rc(list);
+    slot
+}`
+        }
+      ],
+
+      // Row 4: Borrowed Shared
+      [
+        {
+          title: "Cell [4, 1]: Borrowed Shared → Owned Box",
+          sig: "clone_to_box : & (List a) -> List a {1}",
+          granule: "& (List a) -> List a [1] (Deep Cloning)",
+          alloc: "N allocations: Must clone every value and allocate fresh BoxNode cells.",
+          desc: "The source list is read-only and may be concurrently accessed. Must tail-recursively copy all values into brand-new heap Box nodes.",
+          code: `#[inline(always)]
+fn ref_to_box_acc<'a, T: Clone>(
+    cur: Option<&'a BoxNode<T>>,
+    acc: Option<Box<BoxNode<T>>>,
+) -> Option<Box<BoxNode<T>>> {
+    match cur {
+        Some(node) => {
+            let new_box = Some(Box::new(BoxNode { val: node.val.clone(), next: acc }));
+            ref_to_box_acc(node.next.as_deref(), new_box)
+        }
+        None => acc,
+    }
+}
+
+#[inline(always)]
+pub fn row4_col1_shared_ref_to_owned_box<T: Clone>(list: &BoxList<T>) -> BoxList<T> {
+    BoxList { head: ref_to_box_acc(list.head.as_deref(), None) }
+}`
+        },
+        {
+          title: "Cell [4, 2]: Borrowed Shared → Borrowed Unique (&mut BoxList)",
+          sig: "ILLEGAL directly: &T cannot alias &mut T",
+          granule: "Violation of Subtyping: Shared ≰ Unique without copying",
+          alloc: "Direct conversion is FORBIDDEN. Requires allocating into a separate target slot.",
+          desc: "TYPE-THEORETIC NOTE: Direct signature fn(&BoxList) -> &mut BoxList is statically forbidden by Rust (Aliasing XOR Mutability theorem). To satisfy this transition safely, a separate target buffer must be provided.",
+          code: `// A direct signature \`fn(&BoxList<T>) -> &mut BoxList<T>\` is STATICALLY FORBIDDEN
+// by the Borrow Checker. Safe pattern: writing cloned reverse into a separate &mut target:
+#[inline(always)]
+pub fn row4_col2_shared_ref_to_mut_box<'a, T: Clone>(
+    src: &BoxList<T>,
+    target: &'a mut BoxList<T>,
+) -> &'a mut BoxList<T> {
+    *target = row4_col1_shared_ref_to_owned_box(src);
+    target
+}`
+        },
+        {
+          title: "Cell [4, 3]: Borrowed Shared → Owned Shared (RcList)",
+          sig: "clone_to_rc : & (List a) -> List a {0..*}",
+          granule: "& (List a) -> List a [0..∞]",
+          alloc: "N allocations: Creates new RcBox headers for cloned elements.",
+          desc: "Traverses the borrowed list without mutating it, cloning values into freshly allocated Rc control blocks.",
+          code: `#[inline(always)]
+fn ref_to_rc_acc<'a, T: Clone>(
+    cur: Option<&'a BoxNode<T>>,
+    acc: Option<Rc<RcNode<T>>>,
+) -> Option<Rc<RcNode<T>>> {
+    match cur {
+        Some(node) => {
+            let new_rc = Some(Rc::new(RcNode { val: node.val.clone(), next: acc }));
+            ref_to_rc_acc(node.next.as_deref(), new_rc)
+        }
+        None => acc,
+    }
+}
+
+#[inline(always)]
+pub fn row4_col3_shared_ref_to_owned_rc<T: Clone>(list: &BoxList<T>) -> RcList<T> {
+    RcList { head: ref_to_rc_acc(list.head.as_deref(), None) }
+}`
+        },
+        {
+          title: "Cell [4, 4]: Borrowed Shared → Borrowed Shared (Lazy Zero-Allocation View)",
+          sig: "rev_view : &'a (List a) -> ReversedView<'a, T>",
+          granule: "&'a (List a) -> Iterator<&'a a> [0 Allocs]",
+          alloc: "0 heap allocations. Only collects pointers on stack/vector view.",
+          desc: "Returns a lazy reverse iterator over references to list elements. Does not mutate the source and does not clone values, achieving zero-cost reverse traversal.",
+          code: `pub struct ReversedView<'a, T> {
+    cursors: Vec<&'a T>,
+}
+
+#[inline(always)]
+fn collect_refs_acc<'a, T>(cur: Option<&'a BoxNode<T>>, mut acc: Vec<&'a T>) -> Vec<&'a T> {
+    match cur {
+        Some(node) => {
+            acc.push(&node.val);
+            collect_refs_acc(node.next.as_deref(), acc)
+        }
+        None => acc,
+    }
+}
+
+#[inline(always)]
+pub fn row4_col4_shared_ref_to_reversed_view<'a, T>(list: &'a BoxList<T>) -> ReversedView<'a, T> {
+    ReversedView { cursors: collect_refs_acc(list.head.as_deref(), Vec::new()) }
+}
+
+impl<'a, T> Iterator for ReversedView<'a, T> {
+    type Item = &'a T;
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> { self.cursors.pop() }
+}`
+        }
+      ]
+    ];
+
+    let currentCell = [0, 0];
+
+    function selectCell(r, c) {
+      document.querySelectorAll('.cell').forEach(el => el.classList.remove('active'));
+      const table = document.querySelector('table');
+      const cellElement = table.rows[r + 1].cells[c + 1];
+      if (cellElement) cellElement.classList.add('active');
+
+      const data = matrixData[r][c];
+      document.getElementById('insTitle').textContent = data.title;
+      document.getElementById('insSig').textContent = data.sig;
+      document.getElementById('insDesc').textContent = data.desc;
+      document.getElementById('insAlloc').textContent = data.alloc;
+      document.getElementById('insGranule').textContent = data.granule;
+      document.getElementById('insCode').textContent = data.code;
+    }
+
+    // Initialize with [0, 0]
+    selectCell(0, 0);
+  </script>
+</body>
+</html>
