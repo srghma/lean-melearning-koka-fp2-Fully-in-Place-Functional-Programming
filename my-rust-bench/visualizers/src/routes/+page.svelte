@@ -12,6 +12,34 @@
     </p>
   </div>
 
+  <!-- 4x4 Matrix Banner Card -->
+  <a
+    href="/ownership_and_borrowing_four_by_four_matrix"
+    class="group block rounded-xl border border-sky-500/40 bg-gradient-to-r from-sky-950/40 via-slate-900 to-purple-950/40 p-6 shadow-xl transition-all hover:border-sky-400 hover:shadow-sky-500/10"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span
+        class="rounded border border-sky-500/30 bg-sky-500/20 px-2.5 py-0.5 font-mono text-xs font-semibold text-sky-300"
+      >
+        Theoretical Synthesis
+      </span>
+      <span class="font-mono text-xs text-slate-400">ESOP 2022 Entente Cordiale</span>
+    </div>
+    <h2 class="mt-3 text-xl font-bold text-white transition-colors group-hover:text-sky-300">
+      The 4×4 Ownership & Borrowing Reversal Matrix
+    </h2>
+    <p class="mt-1 text-xs leading-relaxed text-slate-300">
+      Comprehensive interactive taxonomy mapping BoxList, &mut BoxList, RcList, and &BoxList across
+      all 16 input/output permutations with LCU modal types, memory traffic analysis, and in-place
+      guarantees.
+    </p>
+    <div
+      class="mt-4 flex items-center gap-1 font-mono text-xs font-semibold text-sky-400 transition-transform group-hover:translate-x-1"
+    >
+      Explore 4×4 Matrix &rarr;
+    </div>
+  </a>
+
   <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
     <!-- Mode 1: Box -> Box -->
     <a

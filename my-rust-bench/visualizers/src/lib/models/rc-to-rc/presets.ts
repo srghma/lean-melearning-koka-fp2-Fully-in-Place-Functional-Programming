@@ -321,8 +321,7 @@ export const RC_PRESETS: RcPresetConfig[] = [
         tag: 'SHARED VIA PARENT'
       }
     ]
-  }
-,
+  },
 
   // Preset 6: Last Node Shared
   {

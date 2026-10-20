@@ -54,6 +54,15 @@
       >
         Box &rarr; Rc
       </a>
+      <a
+        href="/ownership_and_borrowing_four_by_four_matrix"
+        class="rounded px-2.5 py-1 font-mono text-xs no-underline transition-colors {page.url
+          .pathname === '/ownership_and_borrowing_four_by_four_matrix'
+          ? 'bg-sky-600 font-semibold text-white'
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
+      >
+        4×4 Matrix
+      </a>
     </nav>
   </div>
 </header>
