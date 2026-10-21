@@ -1,0 +1,34 @@
+inductive RcList (α : Type u) where
+  | nil : RcList α
+  | cons (head :[1..Infinity] α) (tail :[1..Infinity] RcList α) : RcList α
+
+inductive ArcList (α : Type u) where
+  | nil : ArcList α
+  | cons (head :A[1..Infinity] α) (tail :A[1..Infinity] ArcList α) : ArcList α
+
+inductive BoxList (α : Type u) where
+  | nil : BoxList α
+  | cons (head :* α) (tail :* BoxList α) : BoxList α
+
+
+data List a where
+  Empty : List a;
+  Next  : a -> List a -> List a
+
+type BoxList a = *(List a)
+
+data BoxList a where
+  Nil  : BoxList a;
+  Cons : a -> *(BoxList a) -> BoxList a
+
+type RcList a = !(List a)
+-- or with explicit usage bounds:
+type RcList a = (List a) [0..∞]
+
+data RcList a where
+  Nil  : RcList a;
+  Cons : a -> !(RcList a) -> RcList a
+
+data RcList a where
+  Nil  : RcList a;
+  Cons : a -> (RcList a) [r] -> RcList a
